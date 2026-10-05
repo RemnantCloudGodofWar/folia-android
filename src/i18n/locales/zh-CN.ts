@@ -1596,6 +1596,7 @@ export default {
     "hidePlayerProgressBar": "隐藏底部控制条",
     "playerBottomBarOffset": "底部组件高度",
     "playerBottomBarOffsetDesc": "同时调整各页面的底部控制条、歌曲卡片、操作按钮和侧边面板；播放页字幕也会跟随。最高不超过半个屏幕。",
+    "playerBottomBarOffsetAndroidHint": "用下面的「调整位置」拖动控制条，或点「恢复默认」复位。",
     "playerBottomBarReposition": "在播放页拖动调整",
     "playerBottomBarRepositionUnavailable": "先播放一首歌 —— 控制条要在屏幕上才能拖动",
     "playerBottomBarReset": "恢复默认高度",

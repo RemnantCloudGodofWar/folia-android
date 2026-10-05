@@ -14,6 +14,11 @@ import { PLAYER_CONTROL_SLOT_OPTIONS, type PlayerControlSlotActionId } from '../
 // src/components/modal/settings/PlayerBottomBarSection.tsx
 // 播放页底部基线的高度，以及进度条右侧两个按钮槽位。挂在「界面设置」的底部界面分区里。
 
+/** 安卓容器里改用「调整位置」流程，见下面滑块的说明。 */
+const isAndroidNative = typeof window !== 'undefined'
+    && (window as unknown as { Capacitor?: { getPlatform?: () => string } })
+        .Capacitor?.getPlatform?.() === 'android';
+
 type PlayerBottomBarSectionProps = {
     settingsCardClass: string;
     utilityGhostButtonClass: string;
@@ -140,24 +145,39 @@ const PlayerBottomBarSection: React.FC<PlayerBottomBarSectionProps> = ({
                     </div>
                 </div>
 
-                <div className="flex items-center gap-3">
-                    <input
-                        type="range"
-                        min={PLAYER_BOTTOM_BAR_BASE_OFFSET_PX}
-                        max={maxOffset}
-                        step={1}
-                        value={Math.min(maxOffset, playerBottomBarOffset)}
-                        onPointerDown={handleOffsetPointerDown}
-                        onPointerMove={handleOffsetPointerMove}
-                        onPointerUp={handleOffsetPointerEnd}
-                        onPointerCancel={handleOffsetPointerEnd}
-                        onChange={handleOffsetChange}
-                        className={rangeInputClass}
-                    />
-                    <span className="w-14 text-right font-mono text-xs opacity-60" style={{ color: 'var(--text-secondary)' }}>
-                        {Math.min(maxOffset, playerBottomBarOffset)}px
-                    </span>
-                </div>
+                {/*
+                    安卓上不给这个滑块：它是一段自由量程（上限约半屏高），在可滚动的设置
+                    列表里被手指蹭到一下就会把控制条改到手指位置，而且立刻持久化，装新版本
+                    也不会自己恢复。要调位置就用下面的「调整位置」——那里有实时的范围提示
+                    和确认/取消，误触可以退出。桌面版保留原来的滑块。
+                */}
+                {isAndroidNative ? (
+                    <div className="flex items-center gap-3 text-xs" style={{ color: 'var(--text-secondary)' }}>
+                        <span className="font-mono opacity-60">
+                            {Math.min(maxOffset, playerBottomBarOffset)}px
+                        </span>
+                        <span className="opacity-50">{t('options.playerBottomBarOffsetAndroidHint')}</span>
+                    </div>
+                ) : (
+                    <div className="flex items-center gap-3">
+                        <input
+                            type="range"
+                            min={PLAYER_BOTTOM_BAR_BASE_OFFSET_PX}
+                            max={maxOffset}
+                            step={1}
+                            value={Math.min(maxOffset, playerBottomBarOffset)}
+                            onPointerDown={handleOffsetPointerDown}
+                            onPointerMove={handleOffsetPointerMove}
+                            onPointerUp={handleOffsetPointerEnd}
+                            onPointerCancel={handleOffsetPointerEnd}
+                            onChange={handleOffsetChange}
+                            className={rangeInputClass}
+                        />
+                        <span className="w-14 text-right font-mono text-xs opacity-60" style={{ color: 'var(--text-secondary)' }}>
+                            {Math.min(maxOffset, playerBottomBarOffset)}px
+                        </span>
+                    </div>
+                )}
 
                 <div className="flex flex-wrap gap-2">
                     <button

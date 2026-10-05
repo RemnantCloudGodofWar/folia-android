@@ -62,12 +62,15 @@ const BottomCommandPaletteButton: React.FC = () => {
     return (
         <button
             type="button"
-            aria-label={t('ui.commandPaletteButton')}
-            title={t('ui.commandPaletteButton')}
+            // 文案键和 `openCommandPalette` 同属 help 块（键盘快捷键那一组），不是 ui。
+            aria-label={t('help.commandPaletteButton')}
+            title={t('help.commandPaletteButton')}
             onClick={() => openCommandPalette()}
             tabIndex={shown ? 0 : -1}
             aria-hidden={!shown}
-            className="absolute left-4 bottom-8 z-[70] flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-black/35 text-white/70 shadow-lg backdrop-blur-md transition-opacity duration-300 hover:bg-black/50 hover:text-white"
+            // 左下角 bottom-8 那一带是 Now Playing 提示条的位置（fixed left-6，底距跟随
+            // 控制条基线）。这里抬到 120px，正好落在提示条上方，两者不再叠在一起。
+            className="absolute left-4 bottom-[120px] z-[70] flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-black/35 text-white/70 shadow-lg backdrop-blur-md transition-opacity duration-300 hover:bg-black/50 hover:text-white"
             style={{
                 opacity: shown ? 1 : 0,
                 pointerEvents: shown ? 'auto' : 'none',

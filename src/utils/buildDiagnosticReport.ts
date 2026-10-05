@@ -15,6 +15,16 @@ const readLocalStorageFlag = (key: string): string => {
     }
 };
 
+/** 原始值，不带长度或隐私含义——用于那些本身就是设置数值的键。 */
+const readLocalStorageValue = (key: string): string => {
+    try {
+        const value = localStorage.getItem(key);
+        return value == null || value === '' ? '(default)' : value;
+    } catch {
+        return 'unavailable';
+    }
+};
+
 export const buildDiagnosticReport = async (): Promise<string> => {
     const appVersion = typeof __APP_VERSION__ === 'undefined' ? 'unknown' : __APP_VERSION__;
     const capacitor = (window as unknown as { Capacitor?: { getPlatform?: () => string; isNativePlatform?: () => boolean } }).Capacitor;
@@ -32,6 +42,12 @@ export const buildDiagnosticReport = async (): Promise<string> => {
         `  qq session: ${readLocalStorageFlag('online_provider:qq:cookie')}`,
         `  netease session: ${readLocalStorageFlag('online_provider:netease:cookie')}`,
         `  kugou session: ${readLocalStorageFlag('online_provider:kugou:cookie')}`,
+        '',
+        // 底部控制条被误改到画面中间时，这两个值就是原因，所以一并导出。
+        'ui settings:',
+        `  bottom bar offset: ${readLocalStorageValue('player_bottom_bar_offset')} (base 32, max scales with viewport height)`,
+        `  command palette auto hide: ${readLocalStorageValue('auto_hide_command_palette_button')}`,
+        `  hide player progress bar: ${readLocalStorageValue('hide_player_progress_bar')}`,
         '',
         'library request trace:',
     ];

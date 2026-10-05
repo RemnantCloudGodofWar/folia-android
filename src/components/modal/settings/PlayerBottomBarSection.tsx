@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Move, RotateCcw } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
@@ -69,6 +69,39 @@ const PlayerBottomBarSection: React.FC<PlayerBottomBarSectionProps> = ({
         playerBottomBarLiveOffset.set(next);
     };
 
+    // 触摸屏上，设置列表是可滚动的，手指蹭到这个滑块就会把控制条改到手指所在的
+    // 位置（最大值大约是半屏，控制条会直接跳到画面中间）。所以触摸必须真的横向
+    // 拖动一段距离才认可；鼠标的点击定位不受影响。
+    const touchDragRef = useRef<{ pointerId: number; startX: number; armed: boolean } | null>(null);
+    const TOUCH_DRAG_ARM_PX = 12;
+
+    const handleOffsetPointerDown = (event: React.PointerEvent<HTMLInputElement>) => {
+        if (event.pointerType !== 'touch') {
+            touchDragRef.current = null;
+            return;
+        }
+        touchDragRef.current = { pointerId: event.pointerId, startX: event.clientX, armed: false };
+    };
+
+    const handleOffsetPointerMove = (event: React.PointerEvent<HTMLInputElement>) => {
+        const drag = touchDragRef.current;
+        if (!drag || drag.pointerId !== event.pointerId || drag.armed) return;
+        if (Math.abs(event.clientX - drag.startX) >= TOUCH_DRAG_ARM_PX) {
+            drag.armed = true;
+        }
+    };
+
+    const handleOffsetPointerEnd = () => {
+        touchDragRef.current = null;
+    };
+
+    const handleOffsetChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const drag = touchDragRef.current;
+        // 只在「触摸但还没拖开」时忽略：那就是一次误碰。
+        if (drag && !drag.armed) return;
+        applyOffset(Number(event.target.value));
+    };
+
     // 原生 <select> 的弹层由浏览器画，吃不到 --text-primary 以外的主题变量，暗色主题下
     // 白底配浅色文字直接看不清。仓库里所有设置下拉都走 CustomSelect，这里跟上。
     const slotOptions = useMemo(
@@ -114,7 +147,11 @@ const PlayerBottomBarSection: React.FC<PlayerBottomBarSectionProps> = ({
                         max={maxOffset}
                         step={1}
                         value={Math.min(maxOffset, playerBottomBarOffset)}
-                        onChange={(e) => applyOffset(Number(e.target.value))}
+                        onPointerDown={handleOffsetPointerDown}
+                        onPointerMove={handleOffsetPointerMove}
+                        onPointerUp={handleOffsetPointerEnd}
+                        onPointerCancel={handleOffsetPointerEnd}
+                        onChange={handleOffsetChange}
                         className={rangeInputClass}
                     />
                     <span className="w-14 text-right font-mono text-xs opacity-60" style={{ color: 'var(--text-secondary)' }}>

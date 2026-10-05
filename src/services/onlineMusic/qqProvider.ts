@@ -16,7 +16,14 @@ import { toSafePlaybackUrl } from '../../utils/appPlaybackHelpers';
 import { fetchQQLyrics, searchQQLyrics } from '../../utils/lyrics/providers/qqLyricProvider';
 import { writeProviderSessionValue } from './providerStorage';
 import { normalizeQqCollection, normalizeQqSong, normalizeQqUser } from './qqNormalize';
-import { clearQqSession, getQqTransportAvailability, hasQqSession, requestQq } from './qqTransport';
+import { noteLibraryStep } from '../../nativeBridge/api/libraryTrace.js';
+import {
+    clearQqSession,
+    getQqTransportAvailability,
+    hasQqExtensionSession,
+    hasQqSession,
+    requestQq,
+} from './qqTransport';
 
 // src/services/onlineMusic/qqProvider.ts
 
@@ -151,6 +158,13 @@ const loadRawLikedTracks = async (
     const response = await requestQq<any>('user_liked_songs', { offset, limit });
     const tracks = Array.isArray(response?.songs) ? response.songs : [];
     const total = Number(response?.total);
+    noteLibraryStep('qq', 'frontend:liked-tracks', {
+        offset,
+        limit,
+        tracks: tracks.length,
+        total: Number.isFinite(total) ? total : undefined,
+        more: response?.more === true,
+    });
     return {
         tracks,
         ...(Number.isFinite(total) && total >= 0 ? { total } : {}),
@@ -464,6 +478,17 @@ const getAvailability = (): ReturnType<typeof getQqTransportAvailability> => {
 // 二维码失效时用户看到的是可重试的「已过期」，而不是一个还在轮询的死码。
 const QQ_QR_TTL_MS = 175_000;
 
+// 扩展 / Android 内置桥才有的分步追踪；其他后端没有这份记录，返回空数组即可。
+const collectQqQrLoginDiagnostics = async (): Promise<string[]> => {
+    if (!hasQqExtensionSession()) return [];
+    try {
+        const module = await import('../../nativeBridge/api/qrLoginTrace.js');
+        return module.getQrLoginTraceLines('qq');
+    } catch (error) {
+        return [`qq trace unavailable: ${error instanceof Error ? error.message : String(error)}`];
+    }
+};
+
 const checkQr = async (key: string): Promise<QrLoginState> => {
     const response = await requestQq<any>('login_qr_check', { key });
     const code = Number(response?.code);
@@ -499,8 +524,14 @@ const getUserPlaylists = async (
 ): Promise<ProviderPage<ProviderCollection>> => {
     // 不传 `uid`：会话账号是这条 route 唯一读得到的账号，而后端从凭据里挑出来的账号 ID 比前端
     // 手上这个展示用的可靠 —— 微信凭据的 `musicid` 是占位的 0，回传它只会让自建歌单整段消失。
-    const response = await requestQq<any>('user_playlist', {});
-    const playlists = Array.isArray(response?.playlist) ? response.playlist : [];
+      const response = await requestQq<any>('user_playlist', {});
+      const playlists = Array.isArray(response?.playlist) ? response.playlist : [];
+      noteLibraryStep('qq', 'frontend:playlists', {
+          offset,
+          limit,
+          playlists: playlists.length,
+          code: response?.code,
+      });
     const items = playlists
         .slice(offset, offset + Math.max(0, limit))
         .map((item: unknown) => normalizeQqCollection(item));
@@ -534,10 +565,12 @@ const getLikedSongIds = async (_userId: MediaId): Promise<MediaId[]> => {
             break;
         offset = nextOffset;
     }
-    return tracks
+    const ids = tracks
         .map(normalizeQqSong)
         .map(item => item.sourceRef?.kind === 'online' ? item.sourceRef.mediaId : item.id)
         .filter((id): id is MediaId => id !== undefined && id !== null && id !== '');
+    noteLibraryStep('qq', 'frontend:liked-ids', { tracks: tracks.length, ids: ids.length });
+    return ids;
 };
 
 const getUserAlbums = async (
@@ -741,6 +774,7 @@ export const qqProvider: OnlineMusicProvider = {
         },
         checkQr,
         getQrTtlMs: () => QQ_QR_TTL_MS,
+        getQrLoginDiagnostics: collectQqQrLoginDiagnostics,
         async cancelQr(key) {
             // 后端对未知 key 也回 200，所以失败只可能是网络层。调用方在关窗时 fire-and-forget，
             // 抛出去只会让 UI 卡在一个用户无从处理的错误上，而残留会话最迟 3 分钟后自己过期。

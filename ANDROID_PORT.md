@@ -1,0 +1,103 @@
+# Folia Android 内置桥版本
+
+这是完全内置的 Android 工程，目标是不依赖 Vercel、不依赖 Edge 扩展。
+
+## 当前结构
+
+```text
+Folia React/Vite 前端
+  -> Capacitor Android WebView
+  -> FoliaNativeBridge JavaScript 兼容层
+  -> FoliaNative Capacitor 插件
+  -> Android CookieManager / OkHttp
+```
+
+扩展中的 `api/folia.js`、网易云、QQ、酷狗适配代码已复制到：
+
+```text
+src/nativeBridge/api/
+src/nativeBridge/vendor/
+```
+
+Android 启动时会在 `src/index.tsx` 安装原生桥，模拟浏览器扩展的 `chrome.cookies`、`chrome.storage`、网络请求和 `FOLIA_API_REQUEST` 消息协议。
+
+## 构建环境
+
+- Node.js 24
+- JDK 21（Capacitor 8 的 source/target 级别是 21，必须用 JDK 21；工程里通过 `android/gradle.properties` 的 `org.gradle.java.home` 指定）
+- Android Studio
+- Android SDK 36.1
+- Android Build Tools 36.x
+
+本机已验证路径：
+
+```text
+JDK 21:      C:\Program Files\Microsoft\jdk-21.0.12.101-hotspot
+Android SDK: C:\Users\whycf\Android\Sdk
+```
+
+## 安装 JS 依赖
+
+```powershell
+npm install
+```
+
+## 构建网页产物
+
+```powershell
+$env:VITE_NETEASE_API_BASE='extension'
+$env:VITE_QQ_API_BASE='extension'
+$env:VITE_KUGOU_API_BASE='extension'
+npm run build:capacitor
+```
+
+## 同步 Android 工程
+
+```powershell
+npx cap sync android
+```
+
+## 生成调试 APK
+
+Windows：
+
+```powershell
+$env:ANDROID_HOME='C:\Users\whycf\Android\Sdk'
+$env:ANDROID_SDK_ROOT='C:\Users\whycf\Android\Sdk'
+$env:JAVA_HOME='C:\Program Files\Microsoft\jdk-21.0.12.101-hotspot'
+cd android
+.\gradlew.bat assembleDebug
+```
+
+APK 输出：
+
+```text
+android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+## 当前实现范围
+
+- Android Capacitor 容器
+- 内置桥消息协议
+- Android CookieManager 兼容层
+- OkHttp 网络请求兼容层
+- 网易云、QQ、酷狗 API 代码内置
+- QQ 收藏、专辑、歌单逻辑保留
+- 后台播放前台服务
+- 锁屏和通知栏 MediaSession 控制
+- Android MediaStore 本地音乐扫描
+- App 内本地 HTTP 音频流
+
+## 构建状态
+
+- `npm run build:capacitor` 已通过
+- `npx cap sync android` 已通过
+- `gradlew assembleDebug` 已通过，产出 `android/app/build/outputs/apk/debug/app-debug.apk`
+- APK 包名 `top.izuna.foliamajor`，版本 `0.7.12`，minSdk 24，targetSdk 36
+
+## 尚未完成
+
+- 正式签名和应用商店配置
+- Android 真机调试和修复平台差异（当前无设备连接，未做真机安装测试）
+
+AI 主题等非核心功能未接入 Android 版本。

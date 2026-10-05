@@ -28,6 +28,7 @@ import InteractionSettingsSubview from './settings/InteractionSettingsSubview';
 import StorageSettingsSection from './settings/StorageSettingsSection';
 import { AiHelpPromptModal } from './AiHelpPromptModal';
 import SettingsHelpActions from './SettingsHelpActions';
+import { buildDiagnosticReport } from '../../utils/buildDiagnosticReport';
 import { openPonderNavigation } from '../../services/ponder/pagePonderTarget';
 import ReleaseNotesDialog from './ReleaseNotesDialog';
 import { discordIconUrl, openDiscordInvite } from '../shared/discordCommunity';
@@ -1378,6 +1379,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                 <SettingsHelpActions
                                     onOpenReleaseNotes={() => setShowReleaseNotes(true)}
                                     onOpenPonder={openPonderNavigation}
+                                    onCopyDiagnostics={buildDiagnosticReport}
                                 />
 
                                 {/* Navigation - REMOVED requested items */}

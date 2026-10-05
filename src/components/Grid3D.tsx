@@ -1034,14 +1034,13 @@ export const Grid3D: React.FC<Grid3DProps> = (props) => {
                                 onRestart: () => void handleRestartNeteaseApi(),
                             }
                             : undefined}
-                        diagnostics={qrLoginFailure
-                            ? buildQrLoginDiagnosticsProps({
-                                t,
-                                providerId: loginProviderId,
-                                failure: qrLoginFailure,
-                                buildReport: buildQrDiagnosticReport,
-                            })
-                            : undefined}
+                        // 常驻诊断入口：扫码等待中也能复制诊断，失败时才展开完整说明。
+                        diagnostics={buildQrLoginDiagnosticsProps({
+                            t,
+                            providerId: loginProviderId,
+                            failure: qrLoginFailure,
+                            buildReport: buildQrDiagnosticReport,
+                        })}
                         // 刷新时保留已选的登录方式，否则用户会被踢回步骤一。
                         onRetry={() => void startQrLogin(loginProviderId, selectedLoginMethodId ?? undefined)}
                         onClose={() => {

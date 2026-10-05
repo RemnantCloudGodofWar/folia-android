@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Boxes, Check, ChevronLeft, ChevronsLeftRight, GamepadDirectional, Mic, Monitor, Moon, Play, Settings2 } from 'lucide-react';
+import { Boxes, Check, ChevronLeft, ChevronsLeftRight, GamepadDirectional, Mic, Monitor, Moon, Play, Settings2, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useShallow } from 'zustand/react/shallow';
 import type { Theme } from '../../../types';
@@ -11,6 +11,10 @@ import { useTypographySettingsStore } from '../../../stores/useTypographySetting
 import { usePlayerChromeSettingsStore } from '../../../stores/usePlayerChromeSettingsStore';
 import { useThemeSettingsStore } from '../../../stores/useThemeSettingsStore';
 import { useDesktopSettingsStore } from '../../../stores/useDesktopSettingsStore';
+import AiProviderSettings from './AiProviderSettings';
+
+// 桌面版把 AI 凭据放在主进程设置里，这个页面只有移动端/网页端才需要自己填。
+const isElectronBuild = typeof window !== 'undefined' && Boolean((window as unknown as { electron?: unknown }).electron);
 
 // src/components/modal/settings/LabSettingsModal.tsx
 // Experimental settings subview kept outside SettingsModal to avoid another giant inline panel.
@@ -302,6 +306,14 @@ const LabSettingsModal: React.FC<LabSettingsModalProps> = ({
                                     </div>
                                 )}
                 </SettingsAnchor>
+
+                {/* 安卓/网页版：AI 凭据由用户自己填并保存在本机。桌面版用主进程里的那份设置。 */}
+                {!isElectronBuild && (
+                    <div className="space-y-4">
+                        <SettingsSectionHeading icon={Sparkles} label={t('ui.aiTheme')} divider />
+                        <AiProviderSettings settingsCardClass={settingsCardClass} isDaylight={isDaylight} />
+                    </div>
+                )}
             </div>
             </div>
         </>

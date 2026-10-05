@@ -8,7 +8,7 @@
     "email": "chthollyphile@users.noreply.github.com"
   },
   "private": true,
-  "version": "0.7.13",
+  "version": "0.7.13-android.1",
   "license": "AGPL-3.0",
   "type": "module",
   "main": "electron/main.cjs",
@@ -19,6 +19,11 @@
     "dev": "vite",
     "dev:probe": "vite --open /dev-probe.html",
     "build": "npm run build:vercel-api && vite build",
+    "build:capacitor": "cross-env FOLIA_BUILD_TARGET=capacitor vite build",
+    "cap:sync:android": "npm run build:capacitor && cap sync android",
+    "cap:open:android": "cap open android",
+    "cap:run:android": "npm run build:capacitor && cap run android",
+    "build:android:debug": "npm run cap:sync:android && cd android && gradlew.bat assembleDebug",
     "build:vercel-api": "tsc -p api-ts/tsconfig.json",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
@@ -204,6 +209,11 @@
     }
   },
   "dependencies": {
+    "@capacitor/android": "^8.4.2",
+    "@capacitor/browser": "^8.0.4",
+    "@capacitor/core": "^8.4.2",
+    "@capacitor/splash-screen": "^8.0.2",
+    "@capacitor/status-bar": "^8.0.3",
     "@google/genai": "^2.24.0",
     "@neteasecloudmusicapienhanced/api": "^4.40.1",
     "@xhayper/discord-rpc": "^1.5.1",
@@ -223,6 +233,8 @@
   },
   "devDependencies": {
     "@applemusic-like-lyrics/ttml": "^1.0.1",
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^8.4.2",
     "@chenglou/pretext": "^0.0.9",
     "@emnapi/core": "1.11.3",
     "@emnapi/runtime": "1.11.3",

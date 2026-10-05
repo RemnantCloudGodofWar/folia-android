@@ -1,5 +1,6 @@
 import { colorWithAlpha, parseColorChannels } from '../colorMix';
 import type { MonetBackgroundImage, MonetBackgroundTuning, Theme } from '../../../types';
+import { resolveSameOriginImageSource } from '../../../services/nativeImageFetch';
 
 // src/components/visualizer/monet/monetBackgroundPipeline.ts
 // Builds and caches the static Monet poster background so the visualizer only recomputes when inputs change.
@@ -323,7 +324,17 @@ export const buildMonetBackgroundDataUrl = async ({
         return null;
     }
 
-    const image = await loadImage(sourceUrl);
+    // 远端封面多数没有 CORS 头，直接用会加载失败或污染画布；安卓上先经原生桥
+    // 取回字节转成同源 blob URL，这个背景才真正吃得到封面颜色。
+    const sameOrigin = await resolveSameOriginImageSource(sourceUrl);
+    let image: HTMLImageElement;
+    try {
+        image = await loadImage(sameOrigin?.url ?? sourceUrl);
+    } catch (error) {
+        sameOrigin?.revoke();
+        throw error;
+    }
+    sameOrigin?.revoke();
     const canvas = document.createElement('canvas');
     canvas.width = MONET_BACKGROUND_WIDTH;
     canvas.height = MONET_BACKGROUND_HEIGHT;

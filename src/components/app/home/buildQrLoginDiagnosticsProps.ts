@@ -13,15 +13,17 @@ export const buildQrLoginDiagnosticsProps = ({
 }: {
     t: (key: string) => string;
     providerId: OnlineProviderId;
-    failure: QrLoginFailureKind;
+    failure: QrLoginFailureKind | null;
     buildReport: () => Promise<string>;
 }): QrLoginDiagnosticsPromptProps => ({
     prompt: t(failure === 'expired-after-scan' ? 'home.qrDiagnosticsPromptScanned' : 'home.qrDiagnosticsPrompt'),
     privacyNote: t('home.qrDiagnosticsPrivacy'),
-    copyLabel: t('home.qrDiagnosticsCopy'),
+    copyLabel: failure ? t('home.qrDiagnosticsCopy') : t('home.qrDiagnosticsCopyAnytime'),
     copiedLabel: t('home.qrDiagnosticsCopied'),
     copyFailedLabel: t('home.qrDiagnosticsCopyFailed'),
     reportLabel: t('home.qrDiagnosticsReport'),
+    // 没失败就只留一个常驻复制按钮，失败时才展开完整说明。
+    compact: !failure,
     buildReport,
     buildIssueUrl: report => buildQrLoginIssueUrl({
         providerId,

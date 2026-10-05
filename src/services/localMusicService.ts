@@ -29,6 +29,12 @@ import { getLocalLibraryAvailability } from './localLibraryAvailability';
 import { useLyricSettingsStore } from '../stores/useLyricSettingsStore';
 import { getLocalLyricFilePriority, isSameLocalLyricFormatOrder, normalizeLocalLyricFormatOrder, type LocalLyricFileFormat } from '../utils/lyrics/localLyricFormatOrder';
 import { isLocalFolderIgnored, normalizeLocalFolderPath, runLocalFolderMutation, setLocalFolderIgnored } from './localLibraryFolderIgnore';
+import {
+    importAndroidLocalMusic,
+    isAndroidNativeRuntime,
+    nativeAudioUrlForRef,
+    pickAndroidLocalMusic,
+} from './nativeLocalMusic';
 
 
 type EmbeddedMetadata = EmbeddedMetadataResult;
@@ -1117,6 +1123,10 @@ async function hydrateImportedSongsInBackground(rootFolderName: string, songs: L
 
 // Import folder using File System Access API (if supported)
 export async function importFolder(expectedRootName?: string): Promise<LocalSong[]> {
+    if (isAndroidNativeRuntime()) {
+        // Android 走系统文件管理器挑选文件；桌面端才用 File System Access API。
+        return await pickAndroidLocalMusic();
+    }
     // Request access in the user gesture before waiting for other library writes.
     try {
         const dirHandle = await getImportDirectoryHandle(expectedRootName);
@@ -1595,6 +1605,16 @@ async function cleanupDirHandleIfUnused(rootFolderName: string): Promise<void> {
 // Get audio blob from local song using fileHandle
 // Returns blob URL if fileHandle exists, null otherwise
 export async function getAudioFromLocalSong(song: LocalSong): Promise<string | null> {
+    if (song.nativeAudioUrl) {
+        return song.nativeAudioUrl;
+    }
+    if (song.nativeAudioRef) {
+        const resolved = await nativeAudioUrlForRef(song.nativeAudioRef);
+        if (resolved) {
+            song.nativeAudioUrl = resolved;
+            return resolved;
+        }
+    }
     const fileHandle = await getAccessibleFileHandle(song);
 
     if (fileHandle) {
@@ -1626,6 +1646,9 @@ export async function getAudioFromLocalSong(song: LocalSong): Promise<string | n
 
 /** Resolves the current File for playback recovery without changing the song or minting a URL. */
 export async function getFileFromLocalSong(song: LocalSong): Promise<File | null> {
+    if (song.nativeAudioUrl) {
+        return null;
+    }
     const fileHandle = await getAccessibleFileHandle(song);
     if (fileHandle) {
         try {
@@ -1656,6 +1679,28 @@ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null
  * but returns the ArrayBuffer. Null when no handle can be reached - permission not restored, or moved.
  */
 export async function getLocalSongArrayBuffer(song: LocalSong): Promise<ArrayBuffer | null> {
+    if (song.nativeAudioUrl) {
+        try {
+            const response = await fetch(song.nativeAudioUrl);
+            return response.ok ? await response.arrayBuffer() : null;
+        } catch (error) {
+            console.error('[LocalMusic] Failed to fetch native audio bytes:', error);
+            return null;
+        }
+    }
+    if (song.nativeAudioRef) {
+        const resolved = await nativeAudioUrlForRef(song.nativeAudioRef);
+        if (resolved) {
+            song.nativeAudioUrl = resolved;
+            try {
+                const response = await fetch(resolved);
+                return response.ok ? await response.arrayBuffer() : null;
+            } catch (error) {
+                console.error('[LocalMusic] Failed to fetch imported audio bytes:', error);
+                return null;
+            }
+        }
+    }
     const fileHandle = await getAccessibleFileHandle(song);
     if (!fileHandle) {
         console.warn(`[LocalMusic] No accessible handle for song ${song.id} (automix bytes)`);

@@ -9,6 +9,8 @@ import PinnedCommandSettings from './PinnedCommandSettings';
 import PonderHintSettingsSection from './PonderHintSettingsSection';
 import PlaybackEntryViewSection from './PlaybackEntryViewSection';
 import PlayerBottomBarSection from './PlayerBottomBarSection';
+import AdaptiveLayoutSetting from './AdaptiveLayoutSetting';
+import CommandPaletteButtonSetting from './CommandPaletteButtonSetting';
 import HomeCardPositionSection from './HomeCardPositionSection';
 import { SettingsAnchor } from './navigation/SettingsAnchorContext';
 import SettingsSectionHeading from './navigation/SettingsSectionHeading';
@@ -204,6 +206,18 @@ const GeneralSettingsSubview: React.FC<GeneralSettingsSubviewProps> = ({
             </SettingsAnchor>
 
             <PinnedCommandSettings
+                isDaylight={isDaylight}
+                settingsCardClass={settingsCardClass}
+                theme={theme}
+            />
+
+            <AdaptiveLayoutSetting
+                isDaylight={isDaylight}
+                settingsCardClass={settingsCardClass}
+                theme={theme}
+            />
+
+            <CommandPaletteButtonSetting
                 isDaylight={isDaylight}
                 settingsCardClass={settingsCardClass}
                 theme={theme}

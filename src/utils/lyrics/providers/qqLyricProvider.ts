@@ -12,6 +12,11 @@ import { qrcDecrypt } from './qrcDecrypt';
 import { applyDetectedChorusEffects, applyNeteaseChorusByTime } from '../chorusEffects';
 import type { NeteaseChorusRange } from '../chorusEffects';
 import { getOriginalCoverUrl } from '../../coverUrl';
+import {
+  isFoliaExtensionBridgeAvailable,
+  isFoliaExtensionBridgeConfigured,
+  requestFoliaExtension,
+} from '../../../services/foliaExtensionBridge';
 
 const isElectron = typeof window !== 'undefined' && (window as any).electron;
 
@@ -38,6 +43,24 @@ async function requestQQ(method: string, module: string, param: any): Promise<an
       param,
     },
   };
+
+  const configuredQqBase = typeof import.meta !== 'undefined'
+    ? (import.meta as any).env?.VITE_QQ_API_BASE
+    : '';
+  if (!isElectron && (isFoliaExtensionBridgeConfigured(configuredQqBase) || !configuredQqBase)) {
+    if (await isFoliaExtensionBridgeAvailable()) {
+      const data = await requestFoliaExtension<any>({
+        provider: 'qq_raw',
+        operation: 'musicu',
+        method: 'POST',
+        body: payload,
+      });
+      if (data?.code !== 0 || data?.request?.code !== 0) {
+        throw new Error(`QQ Music API error: code ${data?.code || data?.request?.code}`);
+      }
+      return data.request.data;
+    }
+  }
 
   const targetUrl = 'https://u.y.qq.com/cgi-bin/musicu.fcg';
   const url = isElectron ? targetUrl : `/api/lyric-proxy?url=${encodeURIComponent(targetUrl)}`;

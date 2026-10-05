@@ -2,6 +2,8 @@ import { DualTheme } from "../types";
 import { applyStoredAnimationIntensityToDualTheme } from "./themePreferences";
 import { sanitizeDualTheme } from "./themeSanitizer";
 import { getWebAiProvider } from "./runtimeConfig";
+import { isAiBridgeFetchAvailable } from './aiNativeFetch';
+import { generateThemeWithConfiguredAi } from './aiThemeClient';
 
 const getErrorMessage = (error: unknown) => {
   if (error instanceof Error) {
@@ -25,6 +27,12 @@ export const generateThemeFromLyrics = async (
     if ((window as any).electron && typeof (window as any).electron.generateTheme === 'function') {
       const dualTheme = await (window as any).electron.generateTheme(lyricsText, options);
       return sanitizeDualTheme(dualTheme);
+    }
+
+    // 安卓容器里既没有 Electron 主进程，也没有部署端接口，直接用用户自己填的 Key 请求。
+    // 没配 Key 时抛出的消息与桌面版一致，调用方照旧显示「请先配置 API Key」。
+    if (isAiBridgeFetchAvailable()) {
+      return await generateThemeWithConfiguredAi(lyricsText, options);
     }
 
     const provider = getWebAiProvider();

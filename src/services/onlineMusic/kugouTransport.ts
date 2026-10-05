@@ -1,6 +1,10 @@
 import md5 from 'blueimp-md5';
 import { OnlineProviderError } from '../../types/onlineMusic';
 import { readProviderSessionValue, removeProviderSessionValue, writeProviderSessionValue } from './providerStorage';
+import {
+    isFoliaExtensionBridgeConfigured,
+    requestFoliaExtension,
+} from '../foliaExtensionBridge';
 
 // src/services/onlineMusic/kugouTransport.ts
 
@@ -178,6 +182,7 @@ const getWebSessionCookie = (): string => {
 };
 
 export const hasKugouAuthenticatedSearchSession = (): boolean => {
+    if (isFoliaExtensionBridgeConfigured(getWebApiBase())) return true;
     // Electron keeps the reusable token/dfid in the encrypted main-process bridge. The account id
     // is only a non-secret hint that lets this synchronous selector choose authenticated search.
     if (typeof window !== 'undefined' && window.electron?.kugouRequest) {
@@ -346,6 +351,7 @@ const persistElectronAccountHint = (operation: KugouOperation, response: any): v
 
 export const getKugouTransportAvailability = () => {
     if (typeof window !== 'undefined' && window.electron?.kugouRequest) return { configured: true } as const;
+    if (isFoliaExtensionBridgeConfigured(getWebApiBase())) return { configured: true } as const;
     return getWebApiBase()
         ? { configured: true } as const
         : { configured: false, reason: 'not-configured' as const };
@@ -372,6 +378,29 @@ export const requestKugou = async <T = unknown>(operation: KugouOperation, param
     const base = getWebApiBase();
     if (!base) {
         throw new OnlineProviderError('unavailable', 'VITE_KUGOU_API_BASE is not configured', 'kugou');
+    }
+    if (isFoliaExtensionBridgeConfigured(base)) {
+        try {
+            const body = await requestFoliaExtension<any>({
+                provider: 'kugou',
+                operation,
+                method: 'GET',
+                params,
+            });
+            if (body?.__foliaBridgeError) {
+                if (body.__foliaBridgeError === 'AUTH_REQUIRED') {
+                    throw new OnlineProviderError('auth-required', body.message || 'KuGou login required', 'kugou', body);
+                }
+                if (body.__foliaBridgeError === 'UNSUPPORTED') {
+                    throw new OnlineProviderError('unsupported', body.message || `KuGouMusicApi has no ${operation} route`, 'kugou', body);
+                }
+                throw new OnlineProviderError('network', body.message || body.__foliaBridgeError, 'kugou', body);
+            }
+            return body as T;
+        } catch (error) {
+            if (error instanceof OnlineProviderError) throw error;
+            throw toKugouProviderError(operation, error);
+        }
     }
     const execute = async (targetOperation: KugouOperation, targetParams: KugouParams): Promise<any> => {
         const query = new URLSearchParams();

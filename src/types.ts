@@ -1276,6 +1276,8 @@ export interface LocalSong {
   fileName: string;
   filePath: string; // File path for reference
   fileHandle?: FileSystemFileHandle; // For re-accessing the file (not persisted, stored in memory)
+  nativeAudioUrl?: string; // Android MediaStore-backed stream URL
+  nativeAudioRef?: string; // Android-side audio handle; the stream URL is rebuilt per launch
   duration: number; // milliseconds
   fileSize: number; // bytes
   fileLastModified?: number; // milliseconds since epoch

@@ -1,5 +1,9 @@
 // Plain ESM module shared with the Vercel and Worker runtimes; resolved through allowJs.
 import { buildSegmentationManualPrompt } from '../../shared/lyricSegmentationPrompt.mjs';
+// @ts-ignore -- 共享的纯 ESM 模块，无类型声明。
+import { segmentLyricLines } from '../../shared/lyricSegmentationService.mjs';
+import { buildAiEnv } from './aiSettings';
+import { createAiFetch, isAiBridgeFetchAvailable } from './aiNativeFetch';
 
 // src/services/lyricSegmentationAi.ts
 // Renderer-side entry to lyric word segmentation, mirroring the Electron/web split in gemini.ts:
@@ -38,7 +42,8 @@ const getElectronBridge = (): ElectronBridge | null => {
 
 /** Whether an AI segmentation request can be made at all from this build. */
 export const isLyricSegmentationAiAvailable = (): boolean => (
-    typeof window !== 'undefined' && (Boolean(getElectronBridge()) || typeof fetch === 'function')
+    typeof window !== 'undefined'
+    && (Boolean(getElectronBridge()) || isAiBridgeFetchAvailable() || typeof fetch === 'function')
 );
 
 /** The full prompt a user copies into a model site, lyrics included. */
@@ -62,6 +67,12 @@ const segmentBatch = async (lines: string[], signal?: AbortSignal): Promise<(str
     const bridge = getElectronBridge();
     if (bridge?.segmentLyrics) {
         return assertBoundaries(await bridge.segmentLyrics(lines), lines);
+    }
+
+    // 安卓容器：用本机配置的 Key 直连模型，请求经原生桥转发。
+    if (isAiBridgeFetchAvailable()) {
+        const boundaries = await segmentLyricLines(lines, buildAiEnv(), createAiFetch());
+        return assertBoundaries(boundaries, lines);
     }
 
     const response = await fetch('/api/segment-lyrics', {

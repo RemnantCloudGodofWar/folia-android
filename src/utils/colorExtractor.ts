@@ -1,4 +1,5 @@
 import { extractRepresentativeColorsFromPixels } from './colorPalette';
+import { resolveSameOriginImageSource } from '../services/nativeImageFetch';
 
 // src/utils/colorExtractor.ts
 
@@ -8,7 +9,7 @@ interface RGB {
     b: number;
 }
 
-const loadImagePixels = (imageUrl: string): Promise<Uint8ClampedArray | null> => (
+const loadPixelsFromUrl = (imageUrl: string): Promise<Uint8ClampedArray | null> => (
     new Promise(resolve => {
         const img = new Image();
         img.crossOrigin = "Anonymous";
@@ -29,7 +30,15 @@ const loadImagePixels = (imageUrl: string): Promise<Uint8ClampedArray | null> =>
 
             ctx.drawImage(img, 0, 0, width, height);
 
-            resolve(ctx.getImageData(0, 0, width, height).data);
+            // A cover served without CORS headers taints the canvas and this call throws.
+            // Without the catch the promise below would never settle, which is what made
+            // the feature look like it silently did nothing.
+            try {
+                resolve(ctx.getImageData(0, 0, width, height).data);
+            } catch (error) {
+                console.warn('Cover canvas is not readable (cross-origin image), skipping extraction', error);
+                resolve(null);
+            }
         };
 
         img.onerror = (e) => {
@@ -39,6 +48,22 @@ const loadImagePixels = (imageUrl: string): Promise<Uint8ClampedArray | null> =>
         img.src = imageUrl;
     })
 );
+
+/**
+ * 优先用同源地址读像素：安卓容器里远端封面没有 CORS 头，直接加载会污染画布。
+ * 原生桥取回字节转成 blob URL 之后，画布一定可读。
+ */
+const loadImagePixels = async (imageUrl: string): Promise<Uint8ClampedArray | null> => {
+    const sameOrigin = await resolveSameOriginImageSource(imageUrl);
+    if (sameOrigin) {
+        try {
+            return await loadPixelsFromUrl(sameOrigin.url);
+        } finally {
+            sameOrigin.revoke();
+        }
+    }
+    return await loadPixelsFromUrl(imageUrl);
+};
 
 const extractVibrantColorsFromPixels = (imageData: Uint8ClampedArray, count: number): string[] => {
     const colors: RGB[] = [];

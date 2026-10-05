@@ -1,0 +1,81 @@
+import React, { useEffect, useRef, useState } from 'react';
+import { Command } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { openCommandPalette, useAppViewStore } from '../../../stores/useAppViewStore';
+import { usePlayerChromeSettingsStore } from '../../../stores/usePlayerChromeSettingsStore';
+
+// src/components/app/overlays/BottomCommandPaletteButton.tsx
+// 触屏设备按不了 Ctrl+K，所以在底部左下角放一个按钮打开同一个命令面板。
+// 自动隐藏打开后，一段时间没有操作就淡出，触碰屏幕再出现。
+
+/** 无操作多久后淡出。和播放控制条的自动隐藏节奏接近。 */
+const AUTO_HIDE_DELAY_MS = 3500;
+
+const ACTIVITY_EVENTS = ['pointerdown', 'pointermove', 'touchstart', 'keydown', 'wheel'] as const;
+
+const BottomCommandPaletteButton: React.FC = () => {
+    const { t } = useTranslation();
+    const autoHide = usePlayerChromeSettingsStore(state => state.autoHideCommandPaletteButton);
+    const paletteOpen = useAppViewStore(state => state.isCommandFilterOpen);
+    const [visible, setVisible] = useState(true);
+    const hideTimerRef = useRef<number | null>(null);
+
+    useEffect(() => {
+        if (!autoHide) {
+            if (hideTimerRef.current !== null) {
+                window.clearTimeout(hideTimerRef.current);
+                hideTimerRef.current = null;
+            }
+            setVisible(true);
+            return undefined;
+        }
+
+        const scheduleHide = () => {
+            if (hideTimerRef.current !== null) window.clearTimeout(hideTimerRef.current);
+            hideTimerRef.current = window.setTimeout(() => {
+                hideTimerRef.current = null;
+                setVisible(false);
+            }, AUTO_HIDE_DELAY_MS);
+        };
+        const reveal = () => {
+            setVisible(true);
+            scheduleHide();
+        };
+
+        reveal();
+        ACTIVITY_EVENTS.forEach(eventName => {
+            window.addEventListener(eventName, reveal, { passive: true });
+        });
+        return () => {
+            ACTIVITY_EVENTS.forEach(eventName => {
+                window.removeEventListener(eventName, reveal);
+            });
+            if (hideTimerRef.current !== null) {
+                window.clearTimeout(hideTimerRef.current);
+                hideTimerRef.current = null;
+            }
+        };
+    }, [autoHide]);
+
+    const shown = !paletteOpen && (!autoHide || visible);
+
+    return (
+        <button
+            type="button"
+            aria-label={t('ui.commandPaletteButton')}
+            title={t('ui.commandPaletteButton')}
+            onClick={() => openCommandPalette()}
+            tabIndex={shown ? 0 : -1}
+            aria-hidden={!shown}
+            className="absolute left-4 bottom-8 z-[70] flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-black/35 text-white/70 shadow-lg backdrop-blur-md transition-opacity duration-300 hover:bg-black/50 hover:text-white"
+            style={{
+                opacity: shown ? 1 : 0,
+                pointerEvents: shown ? 'auto' : 'none',
+            }}
+        >
+            <Command size={18} />
+        </button>
+    );
+};
+
+export default BottomCommandPaletteButton;

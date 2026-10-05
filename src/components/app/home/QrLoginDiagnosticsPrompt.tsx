@@ -14,6 +14,8 @@ export type QrLoginDiagnosticsPromptProps = {
     reportLabel: string;
     buildReport: () => Promise<string>;
     buildIssueUrl: (report: string) => string;
+    // 紧凑模式只留一个复制按钮，用于扫码等待中也能随时导出诊断。
+    compact?: boolean;
 };
 
 type CopyState = 'idle' | 'working' | 'copied' | 'failed';
@@ -36,6 +38,7 @@ const QrLoginDiagnosticsPrompt = ({
     reportLabel,
     buildReport,
     buildIssueUrl,
+    compact = false,
 }: QrLoginDiagnosticsPromptProps) => {
     const [copyState, setCopyState] = useState<CopyState>('idle');
 
@@ -62,20 +65,32 @@ const QrLoginDiagnosticsPrompt = ({
     const copyText = copyState === 'copied' ? copiedLabel : copyState === 'failed' ? copyFailedLabel : copyLabel;
     const CopyIcon = copyState === 'working' ? Loader2 : copyState === 'copied' ? Check : ClipboardCopy;
 
+    const copyButton = (
+        <button
+            type="button"
+            onClick={() => void copyReport()}
+            disabled={copyState === 'working'}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/15 text-[11px] font-semibold transition-colors disabled:opacity-50 disabled:cursor-default"
+        >
+            <CopyIcon size={12} className={copyState === 'working' ? 'animate-spin' : undefined} />
+            {copyText}
+        </button>
+    );
+
+    if (compact) {
+        return (
+            <div className="mt-3 flex justify-center">
+                {copyButton}
+            </div>
+        );
+    }
+
     return (
         <div className="mt-5 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-left">
             <p className="text-[11px] leading-snug opacity-75" style={{ color: 'var(--text-primary)' }}>{prompt}</p>
             <p className="text-[10px] leading-snug opacity-45 mt-1" style={{ color: 'var(--text-secondary)' }}>{privacyNote}</p>
             <div className="flex flex-wrap items-center gap-2 mt-3">
-                <button
-                    type="button"
-                    onClick={() => void copyReport()}
-                    disabled={copyState === 'working'}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/15 text-[11px] font-semibold transition-colors disabled:opacity-50 disabled:cursor-default"
-                >
-                    <CopyIcon size={12} className={copyState === 'working' ? 'animate-spin' : undefined} />
-                    {copyText}
-                </button>
+                {copyButton}
                 <button
                     type="button"
                     onClick={() => void handleReport()}

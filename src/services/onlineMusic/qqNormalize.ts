@@ -98,6 +98,9 @@ export const normalizeQqSong = (raw: unknown): UnifiedSong => {
         : undefined;
     const providerData = record(sourceRef?.providerData);
     const album = record(item.album);
+    // Some bridge paths (notably the liked-songs enrichment) send `album` as a
+    // plain string instead of an object, so read that form too.
+    const albumText = typeof item.album === 'string' ? text(item.album) : '';
     const file = record(item.file);
 
     // songmid is the stable playback identity; the numeric song id is only a lyric/detail request parameter.
@@ -130,7 +133,9 @@ export const normalizeQqSong = (raw: unknown): UnifiedSong => {
             // albummid 优先于数字 albumid：后者只在上游一个 mid 都不给时留作显示用的键，
             // 而那种条目不会带 catalogRef，导航层也就不会把它当成可查询的专辑 id。
             id: (albumMid || pick(album, 'id', 'albumid') || '') as MediaId,
-            name: text(pick(album, 'name', 'title', 'albumname')),
+            name: text(pick(album, 'name', 'title', 'albumname'))
+                || albumText
+                || text(pick(item, 'albumName', 'albumname')),
             ...(coverUrl ? { coverUrl } : {}),
             ...(albumRef ? { catalogRef: albumRef } : {}),
         },

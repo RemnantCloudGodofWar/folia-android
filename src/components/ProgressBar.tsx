@@ -203,6 +203,8 @@ const ProgressBar: React.FC<ProgressBarProps> = ({
                     onChange={() => { }} // React requires this
                     onClick={(e) => e.stopPropagation()}
                     className={`absolute inset-0 w-full h-full opacity-0 ${disabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                    // 触摸设备上让进度条独占这个手势，否则系统会把横向拖动判成页面平移。
+                    style={{ touchAction: 'none' }}
                 />
                 <FoliumProgressLayers ctx={foliumCtx} />
             </div>

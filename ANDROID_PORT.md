@@ -93,11 +93,11 @@ android/app/build/outputs/apk/debug/app-debug.apk
 - `npm run build:capacitor` 已通过
 - `npx cap sync android` 已通过
 - `gradlew assembleDebug` 已通过，产出 `android/app/build/outputs/apk/debug/app-debug.apk`
-- APK 包名 `top.izuna.foliamajor`，版本 `0.7.12`，minSdk 24，targetSdk 36
+- APK 包名 `top.izuna.foliamajor`，当前版本 `0.7.13-android.8`（`versionCode` 26），minSdk 24，targetSdk 36
 
 ## 尚未完成
 
 - 正式签名和应用商店配置
-- Android 真机调试和修复平台差异（当前无设备连接，未做真机安装测试）
 
-AI 主题等非核心功能未接入 Android 版本。
+网易云 / QQ / 酷狗登录与曲库、AI 主题配置、后台播放前台服务、锁屏与通知栏媒体控制、
+本地音乐（系统文件管理导入 + 设备音乐库扫描）均已接入，详细改动见提交历史。

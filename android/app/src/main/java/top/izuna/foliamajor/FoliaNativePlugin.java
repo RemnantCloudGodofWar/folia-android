@@ -598,6 +598,50 @@ public class FoliaNativePlugin extends Plugin {
         }
     }
 
+    /**
+     * 删除「导入文件夹」时复制进私有目录的音频副本。
+     *
+     * 只删 App 自己的副本，绝不碰用户的原文件；扫描设备音乐库（MediaStore）得到的歌不在
+     * 这里删除，它们只是引用，用户的原文件必须保留。
+     */
+    @PluginMethod
+    public void deleteImportedAudio(PluginCall call) {
+        JSArray refs = call.getArray("refs", new JSArray());
+        JSArray deleted = new JSArray();
+        JSArray failed = new JSArray();
+        try {
+            if (localAudioServer == null) localAudioServer = new LocalAudioServer(getContext());
+            File directory = localAudioServer.importedAudioDirectory();
+            for (int index = 0; index < refs.length(); index += 1) {
+                String ref = refs.getString(index);
+                File target = resolveImportedFile(directory, ref);
+                if (target == null) {
+                    failed.put(ref);
+                    continue;
+                }
+                // 已经不在了也算成功，重复删除不该被当成错误。
+                if (!target.exists() || target.delete()) {
+                    deleted.put(ref);
+                } else {
+                    failed.put(ref);
+                }
+            }
+            JSObject result = new JSObject();
+            result.put("deleted", deleted);
+            result.put("failed", failed);
+            call.resolve(result);
+        } catch (Exception error) {
+            call.reject(error.getMessage(), error);
+        }
+    }
+
+    /** 只接受 App 自己写出的 imported-* 文件名，挡掉任何路径穿越。 */
+    private static File resolveImportedFile(File directory, String ref) {
+        if (ref == null || !ref.startsWith("imported-")) return null;
+        if (ref.contains("/") || ref.contains("\\") || ref.contains("..")) return null;
+        return new File(directory, ref);
+    }
+
     private List<JSObject> parseCookieHeader(String header, String domain) {
         List<JSObject> cookies = new ArrayList<>();
         if (header == null || header.isEmpty()) return cookies;

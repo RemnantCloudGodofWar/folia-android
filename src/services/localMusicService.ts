@@ -30,6 +30,7 @@ import { useLyricSettingsStore } from '../stores/useLyricSettingsStore';
 import { getLocalLyricFilePriority, isSameLocalLyricFormatOrder, normalizeLocalLyricFormatOrder, type LocalLyricFileFormat } from '../utils/lyrics/localLyricFormatOrder';
 import { isLocalFolderIgnored, normalizeLocalFolderPath, runLocalFolderMutation, setLocalFolderIgnored } from './localLibraryFolderIgnore';
 import {
+    deleteAndroidImportedAudio,
     importAndroidLocalMusic,
     isAndroidNativeRuntime,
     nativeAudioUrlForRef,
@@ -1519,12 +1520,31 @@ export async function matchLyrics(song: LocalSong): Promise<LyricData | null> {
 
 // Delete local song
 export async function deleteLocalSong(id: string): Promise<void> {
+    const song = (await getLocalSongs()).find(item => item.id === id);
     // Remove fileHandle from memory
     fileHandleMap.delete(id);
     await Promise.all([
         dbDeleteLocalSong(id),
         removeCachedCover(`cover_local_${id}`),
     ]);
+    if (song) await deleteAndroidImportCopies([song]);
+}
+
+/**
+ * 清掉安卓导入时复制进私有目录的音频副本。
+ *
+ * 导入的副本存放在 App 私有目录，只删数据库记录的话文件会一直留着占空间；
+ * 扫描设备音乐库得到的歌只是引用用户的原文件，这里带 `Android/MediaStore/` 路径的
+ * 一律跳过，绝不删用户的文件。
+ */
+async function deleteAndroidImportCopies(songs: LocalSong[]): Promise<void> {
+    if (!isAndroidNativeRuntime()) return;
+    const refs = songs
+        .filter(song => song.filePath?.startsWith('Android/Imported/'))
+        .map(song => song.nativeAudioRef || song.filePath?.split('/').pop() || '')
+        .filter(ref => ref.startsWith('imported-'));
+    if (refs.length === 0) return;
+    await deleteAndroidImportedAudio(refs);
 }
 
 function getRootFolderName(song: LocalSong): string | null {
@@ -1810,6 +1830,7 @@ export async function deleteSongsByIds(songIds: string[]): Promise<void> {
     if (uniqueSongIds.length === 0) return;
     const allSongs = await getLocalSongs();
     const deletedIdSet = new Set(uniqueSongIds);
+    const deletedSongs = allSongs.filter(song => deletedIdSet.has(song.id));
     const affectedRoots = new Set(
         allSongs
             .filter(song => deletedIdSet.has(song.id))
@@ -1824,13 +1845,15 @@ export async function deleteSongsByIds(songIds: string[]): Promise<void> {
         dbDeleteLocalSongs(uniqueSongIds),
         ...uniqueSongIds.map(id => removeCachedCover(`cover_local_${id}`)),
     ]);
+    await deleteAndroidImportCopies(deletedSongs);
     await removeDeletedSongIdsFromPlaylists(uniqueSongIds);
     await Promise.all(Array.from(affectedRoots).map(cleanupDirHandleIfUnused));
     notifyLocalMusicUpdated();
     console.log(`[LocalMusic] Deleted ${uniqueSongIds.length} songs by ID`);
 }
 
-// Removes an imported root from the app, including empty roots, without deleting disk files.
+// Removes an imported root from the app, including empty roots. Desktop folders on disk are
+// left alone (they are the user's own files); Android's private-dir copies are deleted too.
 export function removeImportedRoot(rootFolderName: string): Promise<void> {
     return runLocalFolderMutation(() => removeImportedRootContents(rootFolderName));
 }
@@ -1936,6 +1959,7 @@ async function deleteFolderContents(folderName: string): Promise<void> {
         dbDeleteLocalSongs(songIdsToDelete),
         ...songIdsToDelete.map(id => removeCachedCover(`cover_local_${id}`)),
     ]);
+    await deleteAndroidImportCopies(songsToDelete);
     await removeDeletedSongIdsFromPlaylists(songIdsToDelete);
 
     notifyLocalMusicUpdated();

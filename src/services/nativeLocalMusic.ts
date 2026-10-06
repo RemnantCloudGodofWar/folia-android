@@ -28,6 +28,10 @@ type NativePlugin = {
     error?: string;
     failures?: Array<{ uri?: string; message?: string }>;
   }>;
+  deleteImportedAudio?: (options: { refs: string[] }) => Promise<{
+    deleted?: string[];
+    failed?: string[];
+  }>;
   localAudioServerPort: () => Promise<{ port?: number }>;
 };
 
@@ -253,4 +257,44 @@ export const pickAndroidLocalMusic = async (): Promise<LocalSong[]> => {
     throw new Error((response as { error?: string }).error);
   }
   return songs;
+};
+
+/**
+ * 删除安卓导入时复制进 App 私有目录的音频副本。
+ *
+ * 「从库中删除」以前只删数据库记录，私有目录里的副本会一直留着占空间；这里把副本也清掉。
+ * 只处理 `imported-*` 这种 App 自己写出的文件名，扫描设备音乐库得到的歌是引用用户原文件，
+ * 永远不走这个入口。
+ */
+export const deleteAndroidImportedAudio = async (
+  refs: string[],
+): Promise<{ deleted: string[]; failed: string[] }> => {
+  const candidates = Array.from(new Set(
+    refs.filter((ref): ref is string => typeof ref === 'string' && ref.startsWith('imported-')),
+  ));
+  if (candidates.length === 0) return { deleted: [], failed: [] };
+
+  const plugin = getPlugin();
+  if (!plugin?.deleteImportedAudio) {
+    noteLibraryStep('local', 'delete:no-plugin', { refs: candidates.length });
+    return { deleted: [], failed: candidates };
+  }
+
+  try {
+    const response = await plugin.deleteImportedAudio({ refs: candidates });
+    const deleted = Array.isArray(response?.deleted) ? response.deleted : [];
+    const failed = Array.isArray(response?.failed) ? response.failed : [];
+    noteLibraryStep('local', 'delete:done', {
+      requested: candidates.length,
+      deleted: deleted.length,
+      failed: failed.length,
+    });
+    return { deleted, failed };
+  } catch (error) {
+    noteLibraryStep('local', 'delete:error', {
+      requested: candidates.length,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return { deleted: [], failed: candidates };
+  }
 };

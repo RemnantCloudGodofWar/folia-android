@@ -19,7 +19,7 @@
 | utils | 128+ |
 | backend/electron | 64+ |
 | hooks | 64+ |
-| src (其他) | 32+ |
+| src (其他) | 64+ |
 | stores | 32+ |
 | 其他 | 32+ |
 | types | 16+ |

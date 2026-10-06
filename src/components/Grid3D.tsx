@@ -15,6 +15,7 @@ import {
     getProviderCollectionArtistLabel,
 } from './app/home/gridViewCollectionAdapters';
 import { importFolder, resyncAllFolders, LOCAL_MUSIC_SCAN_PROGRESS_EVENT } from '../services/localMusicService';
+import { scanAndroidDeviceMusic, isAndroidNativeRuntime } from '../services/nativeLocalMusic';
 import { getLocalLibraryAvailability } from '../services/localLibraryAvailability';
 import { importLocalPlaylistFile } from '../services/localPlaylistFileService';
 import { useOnlineProviderQrLogin } from '../hooks/useOnlineProviderQrLogin';
@@ -244,6 +245,7 @@ export const Grid3D: React.FC<Grid3DProps> = (props) => {
     const gridRootRef = useRef<HTMLDivElement>(null);
     const searchInputRef = useRef<HTMLInputElement>(null);
     const [isLocalImporting, setIsLocalImporting] = useState(false);
+    const [isLocalScanning, setIsLocalScanning] = useState(false);
     const [isLocalPlaylistImporting, setIsLocalPlaylistImporting] = useState(false);
     const [isLocalRefreshing, setIsLocalRefreshing] = useState(false);
     const [scanProgress, setScanProgress] = useState<{
@@ -583,7 +585,7 @@ export const Grid3D: React.FC<Grid3DProps> = (props) => {
     };
 
     const handleFolderImport = async () => {
-        if (isLocalImporting || isLocalPlaylistImporting || isLocalRefreshing || scanProgress?.active) return;
+        if (isLocalImporting || isLocalScanning || isLocalPlaylistImporting || isLocalRefreshing || scanProgress?.active) return;
 
         const availability = getLocalLibraryAvailability();
         if (!availability.supported) {
@@ -607,8 +609,33 @@ export const Grid3D: React.FC<Grid3DProps> = (props) => {
         }
     };
 
+    // 安卓专有：直接扫描系统音乐库（MediaStore）导入。走的是 READ_MEDIA_AUDIO 权限，
+    // 不弹系统文件管理器，因此和「导入文件夹」是两条互不干扰的入口。
+    const handleScanDeviceMusic = async () => {
+        if (isLocalImporting || isLocalScanning || isLocalPlaylistImporting || isLocalRefreshing || scanProgress?.active) return;
+
+        setIsLocalScanning(true);
+        try {
+            const importedSongs = await scanAndroidDeviceMusic();
+            if (importedSongs.length > 0) {
+                await onRefreshLocalSongs();
+                onStatusMessage?.({
+                    type: 'success',
+                    text: t('localMusic.scanDeviceMusicDone', { count: importedSongs.length }),
+                });
+            } else {
+                onStatusMessage?.({ type: 'info', text: t('localMusic.scanDeviceMusicEmpty') });
+            }
+        } catch (error) {
+            console.error('[Grid3D] Failed to scan device music library:', error);
+            onStatusMessage?.({ type: 'error', text: t('localMusic.scanDeviceMusicFailed') });
+        } finally {
+            setIsLocalScanning(false);
+        }
+    };
+
     const handleRefreshFolders = async () => {
-        if (isLocalImporting || isLocalPlaylistImporting || isLocalRefreshing || scanProgress?.active) return;
+        if (isLocalImporting || isLocalScanning || isLocalPlaylistImporting || isLocalRefreshing || scanProgress?.active) return;
 
         setIsLocalRefreshing(true);
         try {
@@ -959,10 +986,12 @@ export const Grid3D: React.FC<Grid3DProps> = (props) => {
                             focusedPlaylistIndex={localMusicState.focusedPlaylistIndex}
                             setFocusedPlaylistIndex={(index) => setLocalMusicState(prev => ({ ...prev, focusedPlaylistIndex: index }))}
                             onImportFolder={handleFolderImport}
+                            onScanDeviceMusic={isAndroidNativeRuntime() ? handleScanDeviceMusic : undefined}
                             onImportPlaylistFile={handlePlaylistFileImport}
                             onRefreshFolders={handleRefreshFolders}
-                            importButtonDisabled={isLocalImporting || isLocalPlaylistImporting || isLocalRefreshing || Boolean(scanProgress?.active)}
+                            importButtonDisabled={isLocalImporting || isLocalScanning || isLocalPlaylistImporting || isLocalRefreshing || Boolean(scanProgress?.active)}
                             isImporting={isLocalImporting}
+                            isScanningDevice={isLocalScanning}
                             isRefreshing={isLocalRefreshing}
                             isScanInProgress={Boolean(scanProgress?.active)}
                             isImportingPlaylist={isLocalPlaylistImporting}

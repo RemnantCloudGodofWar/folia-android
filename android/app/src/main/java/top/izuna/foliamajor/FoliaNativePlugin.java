@@ -51,10 +51,11 @@ import okhttp3.ResponseBody;
     permissions = {
         @Permission(
             alias = "audio",
-            strings = {
-                Manifest.permission.READ_MEDIA_AUDIO,
-                Manifest.permission.READ_EXTERNAL_STORAGE
-            }
+            strings = { Manifest.permission.READ_MEDIA_AUDIO }
+        ),
+        @Permission(
+            alias = "audioLegacy",
+            strings = { Manifest.permission.READ_EXTERNAL_STORAGE }
         ),
         @Permission(
             alias = "notifications",
@@ -294,11 +295,23 @@ public class FoliaNativePlugin extends Plugin {
 
     @PluginMethod
     public void scanLocalAudio(PluginCall call) {
-        if (getPermissionState("audio") != PermissionState.GRANTED) {
-            requestPermissionForAlias("audio", call, "audioPermissionCallback");
+        String alias = audioPermissionAlias();
+        if (getPermissionState(alias) != PermissionState.GRANTED) {
+            requestPermissionForAlias(alias, call, "audioPermissionCallback");
             return;
         }
         resolveLocalAudioScan(call);
+    }
+
+    /**
+     * Android 13 起读音频用 READ_MEDIA_AUDIO，之前的版本用 READ_EXTERNAL_STORAGE。
+     *
+     * 这两个权限不能放在同一个别名里：被申请的那一个拿到授权后，另一个在系统看来仍是
+     * 拒绝，而 Capacitor 对同一别名取「全部授权才算授权」，结果永远停在 PROMPT，
+     * 扫描会被误判成「权限被拒」。所以按系统版本分开取别名。
+     */
+    private String audioPermissionAlias() {
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU ? "audio" : "audioLegacy";
     }
 
     @PluginMethod
@@ -364,6 +377,9 @@ public class FoliaNativePlugin extends Plugin {
         isAudioPickerOpen = false;
         if (call == null) return;
 
+        // -1 = RESULT_OK，0 = RESULT_CANCELED。区分「用户取消」和「选完了却没数据」，
+        // 否则两种情况的返回值一模一样，只能靠猜。
+        int resultCode = activityResult == null ? Activity.RESULT_CANCELED : activityResult.getResultCode();
         List<Uri> uris = new ArrayList<>();
         Intent data = activityResult == null ? null : activityResult.getData();
         if (data != null) {
@@ -378,11 +394,15 @@ public class FoliaNativePlugin extends Plugin {
             }
         }
 
-        if (uris == null || uris.isEmpty()) {
+        if (uris.isEmpty()) {
             JSObject result = new JSObject();
             result.put("tracks", new JSArray());
-            result.put("cancelled", true);
+            result.put("cancelled", resultCode != Activity.RESULT_OK);
             result.put("picked", 0);
+            result.put("resultCode", resultCode);
+            if (resultCode == Activity.RESULT_OK) {
+                result.put("error", "Picker returned RESULT_OK without a readable document uri");
+            }
             call.resolve(result);
             return;
         }
@@ -439,6 +459,7 @@ public class FoliaNativePlugin extends Plugin {
             result.put("picked", uris.size());
             result.put("copied", copied);
             result.put("failures", failures);
+            result.put("resultCode", resultCode);
             call.resolve(result);
         } catch (Exception error) {
             call.reject(error.getMessage(), error);
@@ -513,7 +534,7 @@ public class FoliaNativePlugin extends Plugin {
 
     @PermissionCallback
     private void audioPermissionCallback(PluginCall call) {
-        if (getPermissionState("audio") == PermissionState.GRANTED) {
+        if (getPermissionState(audioPermissionAlias()) == PermissionState.GRANTED) {
             resolveLocalAudioScan(call);
         } else {
             call.reject("Audio permission denied");

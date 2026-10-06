@@ -33,12 +33,16 @@ interface LocalGrid3DViewProps {
     focusedPlaylistIndex: number;
     setFocusedPlaylistIndex: (index: number) => void;
     onImportFolder: () => void;
+    /** 安卓专有：直接扫描设备音乐库导入，不经过系统文件管理器。 */
+    onScanDeviceMusic?: () => void;
     onImportPlaylistFile?: (file: File) => Promise<void> | void;
     onRefreshFolders?: () => void;
     importButtonDisabled?: boolean;
     isImporting?: boolean;
     isRefreshing?: boolean;
     isScanInProgress?: boolean;
+    /** 安卓专有：正在扫描设备音乐库（MediaStore）。 */
+    isScanningDevice?: boolean;
     isImportingPlaylist?: boolean;
     onOpenGridView?: (collection: GridViewCollectionDescriptor) => void;
     onPlayAll?: (songs: SongResult[]) => void;
@@ -64,12 +68,14 @@ export const LocalGrid3DView: React.FC<LocalGrid3DViewProps> = ({
     focusedPlaylistIndex,
     setFocusedPlaylistIndex,
     onImportFolder,
+    onScanDeviceMusic,
     onImportPlaylistFile,
     onRefreshFolders,
     importButtonDisabled = false,
     isImporting = false,
     isRefreshing = false,
     isScanInProgress = false,
+    isScanningDevice = false,
     isImportingPlaylist = false,
     onOpenGridView,
     onPlayAll,
@@ -245,6 +251,14 @@ export const LocalGrid3DView: React.FC<LocalGrid3DViewProps> = ({
             onClick: onImportFolder,
             title: t('localMusic.importFolder'),
         },
+        ...(onScanDeviceMusic ? [{
+            id: 'scan-device-music',
+            label: isScanningDevice ? t('options.scanning') : t('localMusic.scanDeviceMusic'),
+            icon: isScanningDevice ? <Loader2 size={13} className="animate-spin" /> : <Music size={13} />,
+            disabled: importButtonDisabled,
+            onClick: onScanDeviceMusic,
+            title: t('localMusic.scanDeviceMusic'),
+        }] : []),
         {
             id: 'refresh-folders',
             label: (isScanInProgress || isRefreshing) ? t('options.scanning') : t('options.refresh'),
@@ -268,6 +282,7 @@ export const LocalGrid3DView: React.FC<LocalGrid3DViewProps> = ({
             <div className="w-full h-full flex flex-col items-center justify-center gap-4 opacity-60">
                 <Music size={64} />
                 <p className="text-lg">{t('localMusic.noLocalMusic')}</p>
+                <div className="flex flex-wrap items-center justify-center gap-3">
                 <button
                     onClick={onImportFolder}
                     disabled={importButtonDisabled}
@@ -276,6 +291,17 @@ export const LocalGrid3DView: React.FC<LocalGrid3DViewProps> = ({
                     {importButtonDisabled ? <Loader2 size={16} className="animate-spin" /> : <FolderOpen size={16} />}
                     {isScanInProgress ? t('options.scanning') : isImporting ? t('localMusic.importing') : t('localMusic.importFolder')}
                 </button>
+                {onScanDeviceMusic && (
+                    <button
+                        onClick={onScanDeviceMusic}
+                        disabled={importButtonDisabled}
+                        className="px-6 py-3 rounded-full transition-colors text-sm flex items-center gap-2 bg-white/10 hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        {isScanningDevice ? <Loader2 size={16} className="animate-spin" /> : <Music size={16} />}
+                        {isScanningDevice ? t('options.scanning') : t('localMusic.scanDeviceMusic')}
+                    </button>
+                )}
+                </div>
             </div>
         );
     }

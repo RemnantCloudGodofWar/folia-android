@@ -24,6 +24,8 @@ type NativePlugin = {
     cancelled?: boolean;
     picked?: number;
     copied?: number;
+    resultCode?: number;
+    error?: string;
     failures?: Array<{ uri?: string; message?: string }>;
   }>;
   localAudioServerPort: () => Promise<{ port?: number }>;
@@ -83,6 +85,9 @@ export const importAndroidLocalMusic = async (): Promise<LocalSong[]> => {
       id: `android-media-${track.id}`,
       fileName,
       filePath: `Android/MediaStore/${track.id}`,
+      // 与导入文件同样的道理：端口每次启动都变，只存 URL 重启后就播不了，
+      // 所以媒体库歌曲也记下 ref，播放前重新拼地址。
+      nativeAudioRef: track.id,
       nativeAudioUrl: track.url,
       duration: Number(track.duration) || 0,
       fileSize: Number(track.fileSize) || 0,
@@ -107,6 +112,33 @@ export const importAndroidLocalMusic = async (): Promise<LocalSong[]> => {
     await saveLocalSongs(songs);
   }
   return songs;
+};
+
+/**
+ * 扫描设备音乐库（MediaStore）导入。
+ *
+ * 这是文件选择器之外的备用入口：选择器需要用户在系统文件管理器里自己找到文件，
+ * 而音乐库扫描直接把系统已经收录的音频全部读进来，不需要逐首挑选。
+ * 因此它依赖 READ_MEDIA_AUDIO 权限，插件会自行申请。
+ */
+export const scanAndroidDeviceMusic = async (): Promise<LocalSong[]> => {
+  const plugin = getPlugin();
+  if (!plugin?.scanLocalAudio) {
+    noteLibraryStep('local', 'scan:no-plugin');
+    throw new Error('Android media scan is unavailable');
+  }
+
+  noteLibraryStep('local', 'scan:start');
+  try {
+    const songs = await importAndroidLocalMusic();
+    noteLibraryStep('local', 'scan:done', { songs: songs.length });
+    return songs;
+  } catch (error) {
+    noteLibraryStep('local', 'scan:error', {
+      message: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
 };
 
 /**
@@ -144,6 +176,8 @@ export const pickAndroidLocalMusic = async (): Promise<LocalSong[]> => {
     picked: (response as { picked?: number }).picked ?? (response.tracks || []).length,
     copied: (response as { copied?: number }).copied ?? (response.tracks || []).length,
     tracks: (response.tracks || []).length,
+    resultCode: (response as { resultCode?: number }).resultCode,
+    error: (response as { error?: string }).error,
     failures: failures.length,
     firstFailure: failures[0]?.message,
     port: response.port,
@@ -214,6 +248,9 @@ export const pickAndroidLocalMusic = async (): Promise<LocalSong[]> => {
     // 选了文件却一个都没进来：把原生侧的原因抛出去，界面至少会报错，
     // 而不是像以前那样静默什么都不做。
     throw new Error(`Imported 0 of ${failures.length} picked file(s): ${failures[0]?.message || 'unknown error'}`);
+  } else if ((response as { error?: string }).error) {
+    // RESULT_OK 却没给出任何可读的 uri：这是原生侧明确的异常，同样要报出来。
+    throw new Error((response as { error?: string }).error);
   }
   return songs;
 };

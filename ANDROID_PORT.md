@@ -101,3 +101,27 @@ android/app/build/outputs/apk/debug/app-debug.apk
 
 网易云 / QQ / 酷狗登录与曲库、AI 主题配置、后台播放前台服务、锁屏与通知栏媒体控制、
 本地音乐（系统文件管理导入 + 设备音乐库扫描）均已接入，详细改动见提交历史。
+
+## GitHub Actions
+
+上游带过来的工作流大多是桌面版和自建服务的发布流程，跟 Android 版无关，已从本 fork 移除：
+
+```text
+.github/workflows/canary-pre-release.yml
+.github/workflows/docker-stack-check.yml
+.github/workflows/docker-stack-publish.yml
+.github/workflows/electron-release.yml
+.github/workflows/nightly-pre-release.yml
+.github/workflows/release-candidate.yml
+.github/workflows/sync-server-docker-publish.yml
+```
+
+其中 `nightly-pre-release.yml` 是定时任务（每天 UTC 02:00），会在本仓库里构建并发布会往
+Releases 里塞桌面版夜间包，所以优先删掉。
+
+保留的两个：
+
+- `codemap-sync.yml`：push 到 `main` 后自动重生成并提交 `docs/CODEMAP.md`
+- `pr-unit-tests.yml`：push 和 PR 时跑前端单元测试
+
+以后从上游合并时，如果上游又改了这些被删掉的工作流，冲突解决方式就是继续保持删除状态。

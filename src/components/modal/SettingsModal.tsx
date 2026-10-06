@@ -32,7 +32,7 @@ import { buildDiagnosticReport } from '../../utils/buildDiagnosticReport';
 import { openPonderNavigation } from '../../services/ponder/pagePonderTarget';
 import ReleaseNotesDialog from './ReleaseNotesDialog';
 import { discordIconUrl, openDiscordInvite } from '../shared/discordCommunity';
-import meowImageUrl from '../../../build/miao.png';
+import meowImageUrl from '../../../assets/miao.png';
 import type { LyricData } from '../../types';
 import { type SettingsModalState, type SettingsSubviewId, type VisualizerSettingsSection } from '../../stores/useSettingsModalStore';
 import { SettingsAnchorProvider, useSettingsAnchorList, useSettingsAnchorStore } from './settings/navigation/SettingsAnchorContext';

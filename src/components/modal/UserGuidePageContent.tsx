@@ -6,7 +6,7 @@ import { UserGuideFeatureCard } from './UserGuideFeatureCard';
 import { UserGuideTipCard } from './UserGuideTipCard';
 import { PLAYER_PAGE_SHORTCUTS, type GuidePage, type UserGuideShortcut } from './userGuideContent';
 import { NewFeaturesIntro } from './NewFeaturesIntro';
-import foliaIcon from '../../../build/icon.png';
+import foliaIcon from '../../../assets/folia-icon.png';
 
 // src/components/modal/UserGuidePageContent.tsx
 

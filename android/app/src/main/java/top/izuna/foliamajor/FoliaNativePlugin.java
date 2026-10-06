@@ -2,6 +2,7 @@ package top.izuna.foliamajor;
 
 import android.Manifest;
 import android.app.Activity;
+import android.content.ClipData;
 import android.content.ContentResolver;
 import android.content.Intent;
 import android.database.Cursor;
@@ -13,8 +14,7 @@ import android.webkit.WebView;
 import android.net.Uri;
 import android.util.Base64;
 
-import androidx.activity.result.ActivityResultLauncher;
-import androidx.activity.result.contract.ActivityResultContracts;
+import androidx.activity.result.ActivityResult;
 import androidx.core.content.ContextCompat;
 
 import com.getcapacitor.PermissionState;
@@ -24,6 +24,7 @@ import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
 
@@ -69,16 +70,11 @@ public class FoliaNativePlugin extends Plugin {
         .writeTimeout(45, TimeUnit.SECONDS)
         .build();
     private LocalAudioServer localAudioServer;
-    private ActivityResultLauncher<String[]> audioPicker;
-    private PluginCall pendingAudioPickCall;
+    private boolean isAudioPickerOpen = false;
 
     @Override
     public void load() {
         instance = this;
-        audioPicker = getActivity().registerForActivityResult(
-            new ActivityResultContracts.OpenMultipleDocuments(),
-            this::handlePickedAudioUris
-        );
     }
 
     @Override
@@ -307,12 +303,19 @@ public class FoliaNativePlugin extends Plugin {
 
     @PluginMethod
     public void pickAudioFiles(PluginCall call) {
-        if (pendingAudioPickCall != null) {
+        if (isAudioPickerOpen) {
             call.reject("Audio picker is already open");
             return;
         }
-        pendingAudioPickCall = call;
-        audioPicker.launch(new String[]{"audio/*"});
+        // 用 Capacitor 自己的活动回调机制（@ActivityCallback + startActivityForResult），
+        // 而不是在 load() 里直接 registerForActivityResult：后者依赖活动生命周期时序，
+        // 在部分设备上会拿不到可用的启动器，表现就是「点了导入毫无反应」。
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT)
+            .addCategory(Intent.CATEGORY_OPENABLE)
+            .setType("audio/*")
+            .putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+        isAudioPickerOpen = true;
+        startActivityForResult(call, intent, "handlePickedAudio");
     }
 
     /** 供 WebView 重建导入音频的流地址（端口每次启动都可能不同）。 */
@@ -356,14 +359,30 @@ public class FoliaNativePlugin extends Plugin {
         call.resolve(result);
     }
 
-    private void handlePickedAudioUris(List<Uri> uris) {
-        PluginCall call = pendingAudioPickCall;
-        pendingAudioPickCall = null;
+    @ActivityCallback
+    private void handlePickedAudio(PluginCall call, ActivityResult activityResult) {
+        isAudioPickerOpen = false;
         if (call == null) return;
+
+        List<Uri> uris = new ArrayList<>();
+        Intent data = activityResult == null ? null : activityResult.getData();
+        if (data != null) {
+            ClipData clipData = data.getClipData();
+            if (clipData != null) {
+                for (int index = 0; index < clipData.getItemCount(); index += 1) {
+                    Uri uri = clipData.getItemAt(index).getUri();
+                    if (uri != null) uris.add(uri);
+                }
+            } else if (data.getData() != null) {
+                uris.add(data.getData());
+            }
+        }
+
         if (uris == null || uris.isEmpty()) {
             JSObject result = new JSObject();
             result.put("tracks", new JSArray());
             result.put("cancelled", true);
+            result.put("picked", 0);
             call.resolve(result);
             return;
         }
@@ -374,6 +393,8 @@ public class FoliaNativePlugin extends Plugin {
             File directory = localAudioServer.importedAudioDirectory();
             ContentResolver resolver = getContext().getContentResolver();
             JSArray tracks = new JSArray();
+            JSArray failures = new JSArray();
+            int copied = 0;
 
             for (Uri uri : uris) {
                 try {
@@ -401,14 +422,23 @@ public class FoliaNativePlugin extends Plugin {
                     track.put("mimeType", LocalAudioServer.guessMimeType(safeName));
                     track.put("url", "http://127.0.0.1:" + port + "/audio/" + safeName);
                     tracks.put(track);
+                    copied += 1;
                 } catch (Exception error) {
-                    // Skip a single unreadable file instead of failing the whole batch.
+                    // 单个文件读不了不该让整批失败，但必须把原因带回去，
+                    // 否则界面只会「什么都没发生」。
+                    JSObject failure = new JSObject();
+                    failure.put("uri", String.valueOf(uri));
+                    failure.put("message", error.getMessage() == null ? error.toString() : error.getMessage());
+                    failures.put(failure);
                 }
             }
 
             JSObject result = new JSObject();
             result.put("tracks", tracks);
             result.put("port", port);
+            result.put("picked", uris.size());
+            result.put("copied", copied);
+            result.put("failures", failures);
             call.resolve(result);
         } catch (Exception error) {
             call.reject(error.getMessage(), error);

@@ -2,6 +2,7 @@ import type { LocalSong } from '../types';
 import { saveLocalSongs } from './db';
 import { buildImportedMetadataSnapshot } from '../utils/localSongMetadata';
 import { parseEmbeddedMetadataAsync } from '../utils/localMetadataWorkerClient';
+import { noteLibraryStep } from '../nativeBridge/api/libraryTrace.js';
 
 type NativeAudioTrack = {
   id: string;
@@ -17,7 +18,14 @@ type NativeAudioTrack = {
 
 type NativePlugin = {
   scanLocalAudio: () => Promise<{ tracks?: NativeAudioTrack[] }>;
-  pickAudioFiles: () => Promise<{ tracks?: NativeAudioTrack[]; port?: number; cancelled?: boolean }>;
+  pickAudioFiles: () => Promise<{
+    tracks?: NativeAudioTrack[];
+    port?: number;
+    cancelled?: boolean;
+    picked?: number;
+    copied?: number;
+    failures?: Array<{ uri?: string; message?: string }>;
+  }>;
   localAudioServerPort: () => Promise<{ port?: number }>;
 };
 
@@ -110,10 +118,37 @@ export const importAndroidLocalMusic = async (): Promise<LocalSong[]> => {
 export const pickAndroidLocalMusic = async (): Promise<LocalSong[]> => {
   const plugin = getPlugin();
   if (!plugin?.pickAudioFiles) {
+    noteLibraryStep('local', 'pick:no-plugin', {
+      hasPlugin: Boolean(plugin),
+      methods: plugin ? Object.keys(plugin).join(',') : 'none',
+    });
     throw new Error('Android audio picker is unavailable');
   }
 
-  const response = await plugin.pickAudioFiles();
+  noteLibraryStep('local', 'pick:start');
+  let response: Awaited<ReturnType<NativePlugin['pickAudioFiles']>>;
+  try {
+    response = await plugin.pickAudioFiles();
+  } catch (error) {
+    noteLibraryStep('local', 'pick:error', {
+      message: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
+
+  const failures = Array.isArray((response as { failures?: unknown }).failures)
+    ? (response as { failures: Array<{ uri?: string; message?: string }> }).failures
+    : [];
+  noteLibraryStep('local', 'pick:result', {
+    cancelled: response.cancelled === true,
+    picked: (response as { picked?: number }).picked ?? (response.tracks || []).length,
+    copied: (response as { copied?: number }).copied ?? (response.tracks || []).length,
+    tracks: (response.tracks || []).length,
+    failures: failures.length,
+    firstFailure: failures[0]?.message,
+    port: response.port,
+  });
+
   if (response.cancelled) return [];
   resolvedAudioServerPort = Number(response.port) || resolvedAudioServerPort;
 
@@ -124,14 +159,23 @@ export const pickAndroidLocalMusic = async (): Promise<LocalSong[]> => {
     const fileName = track.fileName || `track-${track.id}`;
     const fallbackTitle = titleFromFileName(fileName);
     let metadata: Awaited<ReturnType<typeof parseEmbeddedMetadataAsync>> = null;
+    let metadataError: string | undefined;
     try {
       const blob = await (await fetch(track.url)).blob();
       metadata = await parseEmbeddedMetadataAsync(new File([blob], fileName, {
         type: track.mimeType || 'audio/*',
       }), true);
     } catch (error) {
+      metadataError = error instanceof Error ? error.message : String(error);
       console.warn('[NativeLocalMusic] Failed to parse embedded metadata', fileName, error);
     }
+    noteLibraryStep('local', 'pick:track', {
+      fileName,
+      fileSize: track.fileSize,
+      urlHost: track.url?.replace(/^https?:\/\//, '').split('/')[0],
+      metadata: metadata ? 'ok' : 'none',
+      metadataError,
+    });
 
     const title = metadata?.title || fallbackTitle;
     songs.push({
@@ -165,6 +209,11 @@ export const pickAndroidLocalMusic = async (): Promise<LocalSong[]> => {
 
   if (songs.length > 0) {
     await saveLocalSongs(songs);
+    noteLibraryStep('local', 'pick:saved', { songs: songs.length });
+  } else if (failures.length > 0) {
+    // 选了文件却一个都没进来：把原生侧的原因抛出去，界面至少会报错，
+    // 而不是像以前那样静默什么都不做。
+    throw new Error(`Imported 0 of ${failures.length} picked file(s): ${failures[0]?.message || 'unknown error'}`);
   }
   return songs;
 };

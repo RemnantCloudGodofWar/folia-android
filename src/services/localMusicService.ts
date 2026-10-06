@@ -35,6 +35,7 @@ import {
     nativeAudioUrlForRef,
     pickAndroidLocalMusic,
 } from './nativeLocalMusic';
+import { noteLibraryStep } from '../nativeBridge/api/libraryTrace.js';
 
 
 type EmbeddedMetadata = EmbeddedMetadataResult;
@@ -1124,8 +1125,26 @@ async function hydrateImportedSongsInBackground(rootFolderName: string, songs: L
 // Import folder using File System Access API (if supported)
 export async function importFolder(expectedRootName?: string): Promise<LocalSong[]> {
     if (isAndroidNativeRuntime()) {
+        // 带 root 名进来的是「重新扫描已有文件夹」（resyncAllFolders），不是新导入。
+        // 安卓的导入是把文件复制进 App 私有目录，文件已经在库里，这里只把该根目录下的
+        // 歌还回去即可——以前这里会再弹一次文件选择器，刷新变成了重新选文件。
+        if (expectedRootName) {
+            noteLibraryStep('local', 'rescan:android', { root: expectedRootName });
+            const allSongs = await getLocalSongs();
+            return allSongs.filter(song => getLocalSongRootFolderName(song) === expectedRootName);
+        }
         // Android 走系统文件管理器挑选文件；桌面端才用 File System Access API。
-        return await pickAndroidLocalMusic();
+        noteLibraryStep('local', 'import:android-branch', { expectedRootName: expectedRootName ?? null });
+        try {
+            const songs = await pickAndroidLocalMusic();
+            noteLibraryStep('local', 'import:android-done', { songs: songs.length });
+            return songs;
+        } catch (error) {
+            noteLibraryStep('local', 'import:android-error', {
+                message: error instanceof Error ? error.message : String(error),
+            });
+            throw error;
+        }
     }
     // Request access in the user gesture before waiting for other library writes.
     try {
@@ -1605,15 +1624,19 @@ async function cleanupDirHandleIfUnused(rootFolderName: string): Promise<void> {
 // Get audio blob from local song using fileHandle
 // Returns blob URL if fileHandle exists, null otherwise
 export async function getAudioFromLocalSong(song: LocalSong): Promise<string | null> {
-    if (song.nativeAudioUrl) {
-        return song.nativeAudioUrl;
-    }
+    // 先看 nativeAudioRef：导入时存下的 nativeAudioUrl 带着当时的端口号，
+    // 而端口每次启动都会变，重启后那条 URL 已经失效了。用 ref 重新拼才是对的。
     if (song.nativeAudioRef) {
         const resolved = await nativeAudioUrlForRef(song.nativeAudioRef);
         if (resolved) {
             song.nativeAudioUrl = resolved;
+            noteLibraryStep('local', 'play:resolved', { ref: song.nativeAudioRef, host: resolved.replace(/^https?:\/\//, '').split('/')[0] });
             return resolved;
         }
+        noteLibraryStep('local', 'play:resolve-failed', { ref: song.nativeAudioRef });
+    }
+    if (song.nativeAudioUrl) {
+        return song.nativeAudioUrl;
     }
     const fileHandle = await getAccessibleFileHandle(song);
 
@@ -1679,15 +1702,7 @@ export async function getFileFromLocalSong(song: LocalSong): Promise<File | null
  * but returns the ArrayBuffer. Null when no handle can be reached - permission not restored, or moved.
  */
 export async function getLocalSongArrayBuffer(song: LocalSong): Promise<ArrayBuffer | null> {
-    if (song.nativeAudioUrl) {
-        try {
-            const response = await fetch(song.nativeAudioUrl);
-            return response.ok ? await response.arrayBuffer() : null;
-        } catch (error) {
-            console.error('[LocalMusic] Failed to fetch native audio bytes:', error);
-            return null;
-        }
-    }
+    // 与 getAudioFromLocalSong 同样的顺序：ref 优先，避免用到重启前失效的端口。
     if (song.nativeAudioRef) {
         const resolved = await nativeAudioUrlForRef(song.nativeAudioRef);
         if (resolved) {
@@ -1699,6 +1714,15 @@ export async function getLocalSongArrayBuffer(song: LocalSong): Promise<ArrayBuf
                 console.error('[LocalMusic] Failed to fetch imported audio bytes:', error);
                 return null;
             }
+        }
+    }
+    if (song.nativeAudioUrl) {
+        try {
+            const response = await fetch(song.nativeAudioUrl);
+            return response.ok ? await response.arrayBuffer() : null;
+        } catch (error) {
+            console.error('[LocalMusic] Failed to fetch native audio bytes:', error);
+            return null;
         }
     }
     const fileHandle = await getAccessibleFileHandle(song);

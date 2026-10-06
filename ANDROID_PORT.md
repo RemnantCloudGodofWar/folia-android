@@ -1,6 +1,6 @@
-# Folia Android 内置桥版本
+# Folia for Android
 
-这是完全内置的 Android 工程，目标是不依赖 Vercel、不依赖 Edge 扩展。
+Folia 的非官方 Android 移植版。工程完全内置，不依赖 Vercel，也不依赖浏览器扩展。
 
 ## 当前结构
 

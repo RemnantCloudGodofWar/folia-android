@@ -15,11 +15,41 @@ import { getPersonalFmRequestOptions } from '../../stores/usePersonalFmModeStore
 import { parseNeteaseChorusRanges, processNeteaseLyrics } from '../../utils/lyrics/neteaseProcessing';
 import { toFiniteNumber } from '../../utils/replayGain';
 import { createProviderSongMetadata } from '../../utils/songMetadata';
-import { isSongMarkedUnavailable, neteaseApi } from '../netease';
+import { isSongMarkedUnavailable, neteaseApi, getConfiguredApiBase } from '../netease';
+import { isFoliaExtensionBridgeConfigured } from '../foliaExtensionBridge';
 import { writeProviderSessionValue } from './providerStorage';
 import { collectNeteaseLoginDiagnostics } from './neteaseLoginDiagnostics';
 
 // src/services/onlineMusic/neteaseProvider.ts
+
+/**
+ * Ring buffer behind the QR login diagnostics report.
+ *
+ * The renderer never keeps the NetEase cookie: with the hosted API it round-trips through a query
+ * parameter, and with the built-in bridge the native cookie jar owns it. That leaves the QR
+ * response codes and the login-status outcome as the only evidence a failed scan produces, so they
+ * are what this trace keeps.
+ */
+const NETEASE_QR_TRACE_LIMIT = 24;
+const neteaseQrTrace: Array<{ at: number; line: string }> = [];
+// The QR endpoint is polled every couple of seconds; only code changes are worth a line.
+let lastNeteaseQrCode: number | null = null;
+
+const noteNeteaseQrTrace = (line: string): void => {
+    neteaseQrTrace.push({ at: Date.now(), line });
+    if (neteaseQrTrace.length > NETEASE_QR_TRACE_LIMIT) {
+        neteaseQrTrace.splice(0, neteaseQrTrace.length - NETEASE_QR_TRACE_LIMIT);
+    }
+};
+
+const getNeteaseQrTraceLines = (): string[] => {
+    if (neteaseQrTrace.length === 0) return [];
+    const base = neteaseQrTrace[0].at;
+    return neteaseQrTrace.map(({ at, line }) => {
+        const offset = String(at - base).padStart(5, ' ');
+        return `ne step +${offset}ms ${line}`;
+    });
+};
 
 export const toNeteaseId = (id: MediaId): number => {
     const numericId = Number(id);
@@ -343,7 +373,11 @@ export const neteaseProvider: OnlineMusicProvider = {
             const loginResponse = await neteaseApi.getLoginStatus();
             const loginProfile = loginResponse?.data?.profile;
             const loginCode = Number(loginResponse?.code ?? loginResponse?.data?.code);
-            if (!loginProfile || [301, 401, 403].includes(loginCode)) return null;
+            noteNeteaseQrTrace(`login-status code=${Number.isFinite(loginCode) ? loginCode : 'none'} hasProfile=${Boolean(loginProfile)}`);
+            if (!loginProfile || [301, 401, 403].includes(loginCode)) {
+                noteNeteaseQrTrace('login-status → null (no profile)');
+                return null;
+            }
 
             const accountResponse = await neteaseApi.getUserAccount();
             const accountCode = Number(accountResponse?.code ?? accountResponse?.data?.code);
@@ -351,18 +385,28 @@ export const neteaseProvider: OnlineMusicProvider = {
             const accountId = accountResponse?.account?.id ?? accountProfile?.userId;
             const loginId = loginProfile?.userId ?? loginProfile?.id;
             if (!accountProfile || [301, 401, 403].includes(accountCode) || !accountId || !loginId || String(accountId) !== String(loginId)) {
+                noteNeteaseQrTrace(
+                    `login-status → null (account code=${Number.isFinite(accountCode) ? accountCode : 'none'}`
+                    + ` login=${loginId ?? 'none'} account=${accountId ?? 'none'})`,
+                );
                 return null;
             }
 
             if (typeof loginResponse?.cookie === 'string' && loginResponse.cookie) {
                 writeProviderSessionValue('netease', 'cookie', loginResponse.cookie);
             }
+            noteNeteaseQrTrace(`login-status → ok userId=${loginId}`);
             return normalizeUser({ ...loginProfile, ...accountProfile });
         },
         async logout() { await neteaseApi.logout(); },
         async getQrKey() {
+            // A fresh session starts here; without the reset the next scan's first code would be
+            // swallowed as "unchanged".
+            lastNeteaseQrCode = null;
             const response = await neteaseApi.getQrKey();
-            return String(response?.data?.unikey || '');
+            const key = String(response?.data?.unikey || '');
+            noteNeteaseQrTrace(`qr:key ${key ? 'ok' : `failed code=${response?.code ?? 'none'}`}`);
+            return key;
         },
         async createQr(key) {
             const response = await neteaseApi.createQr(key);
@@ -370,6 +414,14 @@ export const neteaseProvider: OnlineMusicProvider = {
         },
         async checkQr(key) {
             const response = await neteaseApi.checkQr(key);
+            const rawCode = Number(response?.code);
+            if (rawCode !== lastNeteaseQrCode) {
+                lastNeteaseQrCode = rawCode;
+                noteNeteaseQrTrace(
+                    `qr:check code=${Number.isFinite(rawCode) ? rawCode : 'none'}`
+                    + ` hasCookie=${typeof response?.cookie === 'string' && Boolean(response.cookie)}`,
+                );
+            }
             if (response?.code === 800) return { state: 'expired' };
             if (response?.code === 802) return { state: 'scanned' };
             if (response?.code === 803) {
@@ -382,7 +434,15 @@ export const neteaseProvider: OnlineMusicProvider = {
             // 带上原始状态码：只剩 state 的话，风控（8821 等）和后端吞错后的 404 在日志里无从区分。
             return { state: 'error', message: `code ${response?.code ?? 'none'}: ${response?.message || response?.msg || 'no message'}` };
         },
-        getQrLoginDiagnostics: collectNeteaseLoginDiagnostics,
+        getQrLoginDiagnostics: async () => {
+            const lines = await collectNeteaseLoginDiagnostics();
+            if (isFoliaExtensionBridgeConfigured(getConfiguredApiBase())) {
+                // Without this the report reads "login cookie=no" on Android, which looks like a
+                // logged-out app while the native cookie jar is perfectly happy.
+                lines.push('transport: built-in bridge (credentials stay in the native cookie jar, renderer storage stays empty by design)');
+            }
+            return [...lines, ...getNeteaseQrTraceLines()];
+        },
     },
     library: {
         async getUserPlaylists(userId, limit, offset) {

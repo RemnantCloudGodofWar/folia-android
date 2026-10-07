@@ -349,6 +349,32 @@ const persistElectronAccountHint = (operation: KugouOperation, response: any): v
     if (userId) writeProviderSessionValue('kugou', 'userid', String(userId));
 };
 
+/**
+ * Reads the account id out of a bridge response.
+ *
+ * The built-in bridge answers flat (`userId`, see `nativeBridge/api/kugou.js`), the hosted
+ * KuGouMusicApi nests the same value as `data.userid`, and `user_detail` wraps a profile under
+ * `data.user_info`. Only those shapes are inspected, so a search payload can never leak a song id
+ * into the session.
+ */
+const readBridgeAccountId = (response: any): string => {
+    const profile = response?.data?.user_info;
+    const candidate = response?.userId ?? response?.userid ?? response?.user_id
+        ?? profile?.userid ?? profile?.user_id;
+    return candidate === undefined || candidate === null ? '' : String(candidate).trim();
+};
+
+/**
+ * The bridge keeps every reusable credential in its own cookie jar, so renderer storage only needs
+ * the account id. Without it `getLoginStatus` bails out before it ever asks the server — it needs
+ * the id to build the `user_detail` request — and a freshly scanned QR login ends as
+ * `account-refresh-failed` while the bridge still holds valid cookies.
+ */
+const persistBridgeAccountHint = (response: any): void => {
+    const userId = readBridgeAccountId(response);
+    if (userId) writeProviderSessionValue('kugou', 'userid', userId);
+};
+
 export const getKugouTransportAvailability = () => {
     if (typeof window !== 'undefined' && window.electron?.kugouRequest) return { configured: true } as const;
     if (isFoliaExtensionBridgeConfigured(getWebApiBase())) return { configured: true } as const;
@@ -396,6 +422,7 @@ export const requestKugou = async <T = unknown>(operation: KugouOperation, param
                 }
                 throw new OnlineProviderError('network', body.message || body.__foliaBridgeError, 'kugou', body);
             }
+            persistBridgeAccountHint(body);
             return body as T;
         } catch (error) {
             if (error instanceof OnlineProviderError) throw error;

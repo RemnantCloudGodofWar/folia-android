@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { neteaseApi } from '@/services/netease';
+import { getConfiguredApiBase, neteaseApi } from '@/services/netease';
 import { neteaseProvider } from '@/services/onlineMusic/neteaseProvider';
 import type { UnifiedSong } from '@/types';
 import { parseLyricsAsync } from '@/utils/lyrics/workerClient';
@@ -8,6 +8,7 @@ import { parseLyricsAsync } from '@/utils/lyrics/workerClient';
 
 vi.mock('@/services/netease', () => ({
     isSongMarkedUnavailable: (candidate: UnifiedSong) => candidate.privilege?.st === -200,
+    getConfiguredApiBase: vi.fn(() => null),
     neteaseApi: {
         normalizeSongResult: vi.fn((raw: unknown) => raw),
         getSongUrl: vi.fn(),
@@ -19,6 +20,7 @@ vi.mock('@/services/netease', () => ({
         getArtistAlbums: vi.fn(),
         getPersonalizedPlaylists: vi.fn(),
         getLikedSongs: vi.fn(),
+        getQrKey: vi.fn(),
         checkQr: vi.fn(),
         scrobbleV1: vi.fn(),
     },
@@ -304,5 +306,22 @@ describe('neteaseProvider listening reports', () => {
 
         await expect(neteaseProvider.playbackReports!.reportPlayback(reported, { playedSeconds: 45 }))
             .rejects.toMatchObject({ code: 'unavailable' });
+    });
+
+    // On Android the renderer holds no NetEase cookie (the built-in bridge keeps it), so a failed
+    // scan has to leave its QR codes and login-status outcome in the diagnostics instead.
+    it('reports the QR codes and the transport when the built-in bridge is in use', async () => {
+        vi.mocked(getConfiguredApiBase).mockReturnValue('extension');
+        vi.mocked(neteaseApi.getQrKey).mockResolvedValue({ code: 200, data: { unikey: 'key-1' } } as any);
+        vi.mocked(neteaseApi.checkQr).mockResolvedValue({ code: 803, cookie: 'MUSIC_U=abc' } as any);
+        const auth = neteaseProvider.auth!;
+
+        await expect(auth.getQrKey!()).resolves.toBe('key-1');
+        await expect(auth.checkQr!('key-1')).resolves.toEqual({ state: 'confirmed' });
+
+        const lines = await auth.getQrLoginDiagnostics!();
+        expect(lines).toContain('transport: built-in bridge (credentials stay in the native cookie jar, renderer storage stays empty by design)');
+        expect(lines.some(line => line.includes('qr:key ok'))).toBe(true);
+        expect(lines.some(line => line.includes('qr:check code=803 hasCookie=true'))).toBe(true);
     });
 });

@@ -351,4 +351,87 @@ describe('KuGou Web transport', () => {
         expect(getKugouTransportAvailability()).toEqual({ configured: false, reason: 'not-configured' });
         await expect(requestKugou('search', { keywords: 'song' })).rejects.toMatchObject({ code: 'unavailable' });
     });
+
+    // The Android app talks to the built-in bridge instead of Electron or a hosted API. The bridge
+    // holds the cookies itself and answers flat (`userId`), so the renderer only gets the account id
+    // hint. Without it `getLoginStatus` bails out before asking the server and a QR login that the
+    // phone already confirmed ends as `account-refresh-failed`.
+    const stubBuiltInBridge = (response: unknown) => {
+        // The bridge module registers one listener at import time and the readiness probe adds a
+        // second one, so the stub has to keep them all instead of overwriting the same key.
+        const listeners = new Map<string, Array<(event: any) => void>>();
+        const dispatch = (event: any) => {
+            for (const handler of listeners.get('message') || []) handler(event);
+        };
+        const fakeWindow: any = {
+            setTimeout: globalThis.setTimeout,
+            clearTimeout: globalThis.clearTimeout,
+            addEventListener: (type: string, handler: (event: any) => void) => {
+                listeners.set(type, [...(listeners.get(type) || []), handler]);
+            },
+            removeEventListener: (type: string, handler: (event: any) => void) => {
+                listeners.set(type, (listeners.get(type) || []).filter(entry => entry !== handler));
+            },
+            postMessage: (payload: any) => {
+                if (payload.type === 'FOLIA_BRIDGE_PING') {
+                    dispatch({
+                        source: fakeWindow,
+                        data: { source: 'folia-extension-bridge', type: 'FOLIA_BRIDGE_PONG', version: '1.4.1' },
+                    });
+                    return;
+                }
+                if (payload.type === 'FOLIA_API_REQUEST') {
+                    dispatch({
+                        source: fakeWindow,
+                        data: {
+                            source: 'folia-extension-bridge',
+                            type: 'FOLIA_API_RESPONSE',
+                            id: payload.id,
+                            ok: true,
+                            data: response,
+                        },
+                    });
+                }
+            },
+        };
+        vi.stubGlobal('window', fakeWindow);
+    };
+
+    it('keeps the account id from a flat built-in bridge login response', async () => {
+        vi.stubEnv('VITE_KUGOU_API_BASE', 'extension');
+        const response = { provider: 'kg', status: 4, code: 4, loggedIn: true, userId: '123', token: 'bridge-token' };
+        stubBuiltInBridge(response);
+        const { requestKugou } = await import('@/services/onlineMusic/kugouTransport');
+
+        await expect(requestKugou('login_qr_check', { key: 'qr' })).resolves.toEqual(response);
+
+        expect(storage.get('online_provider:kugou:userid')).toBe('123');
+        // Credentials stay in the bridge cookie jar; the renderer must not mirror them.
+        expect(storage.get('online_provider:kugou:cookie')).toBeUndefined();
+        expect(storage.get('online_provider:kugou:token')).toBeUndefined();
+    });
+
+    it('reads the account id from a nested built-in bridge profile response', async () => {
+        vi.stubEnv('VITE_KUGOU_API_BASE', 'extension');
+        stubBuiltInBridge({
+            status: 1,
+            data: { user_info: { userid: '456', nickname: 'KuGou 456' } },
+        });
+        const { requestKugou } = await import('@/services/onlineMusic/kugouTransport');
+
+        await requestKugou('user_detail', {});
+
+        expect(storage.get('online_provider:kugou:userid')).toBe('456');
+    });
+
+    it('ignores built-in bridge payloads that carry no account id', async () => {
+        vi.stubEnv('VITE_KUGOU_API_BASE', 'extension');
+        storage.set('online_provider:kugou:userid', 'existing');
+        stubBuiltInBridge({ code: 200, data: { url: 'https://h5.kugou.com/qr', qrimg: 'data:image/png;base64,AAAA' } });
+        const { requestKugou } = await import('@/services/onlineMusic/kugouTransport');
+
+        await requestKugou('login_qr_create', { key: 'qr' });
+
+        expect(storage.get('online_provider:kugou:userid')).toBe('existing');
+    });
 });

@@ -11,6 +11,7 @@ import {
     type ProviderHistoryEntry,
     type ProviderPage,
     type ProviderUser,
+    type QrLoginState,
 } from '../../types/onlineMusic';
 import { getSizedCoverUrl } from '../../utils/coverUrl';
 import { parseLyricsByFormat } from '../../utils/lyrics/parserCore';
@@ -445,6 +446,24 @@ export const resolveKugouSongCatalogRefs = async (song: UnifiedSong): Promise<Un
             ...(albumRef ? { catalogRef: albumRef } : {}),
         },
     };
+};
+
+/**
+ * Ring buffer behind the QR login diagnostics report.
+ *
+ * The failure mode that matters here is "the phone confirmed but the app still sees no session",
+ * so the account-id hint and the login-status outcome are the lines worth keeping. Without them a
+ * failed Kugou scan reports `kugou details: (none)` and there is nothing to read.
+ */
+const KUGOU_QR_TRACE_LIMIT = 24;
+const kugouQrTrace: Array<{ at: number; line: string }> = [];
+// Only state *changes* land in the trace; the QR endpoint is polled every couple of seconds.
+let lastKugouQrState: QrLoginState['state'] | '' = '';
+const noteKugouQrTrace = (line: string): void => {
+    kugouQrTrace.push({ at: Date.now(), line });
+    if (kugouQrTrace.length > KUGOU_QR_TRACE_LIMIT) {
+        kugouQrTrace.splice(0, kugouQrTrace.length - KUGOU_QR_TRACE_LIMIT);
+    }
 };
 
 const normalizeUser = (raw: any): ProviderUser => {
@@ -1143,7 +1162,13 @@ export const kugouProvider: OnlineMusicProvider = {
                 transport: hasElectronTransport ? 'electron' : 'web',
                 hasWebUserId: Boolean(userId),
             });
-            if (!userId && !hasElectronTransport) return null;
+            noteKugouQrTrace(`login-status start transport=${hasElectronTransport ? 'electron' : 'web'} hasAccountIdHint=${Boolean(userId)}`);
+            if (!userId && !hasElectronTransport) {
+                // The bridge holds the cookies, but user_detail still needs the id to address the
+                // account, so a scan can be fully confirmed upstream and still land here.
+                noteKugouQrTrace('login-status → null (no account id hint to build user_detail)');
+                return null;
+            }
             try {
                 const response = await requestKugou('user_detail', { userid: userId || undefined });
                 let user = normalizeUser(response);
@@ -1170,12 +1195,17 @@ export const kugouProvider: OnlineMusicProvider = {
                     hasNickname: Boolean(user.nickname),
                     hasAvatar: Boolean(user.avatarUrl),
                 });
-                return user.id && user.nickname ? user : null;
+                const resolved = user.id && user.nickname ? user : null;
+                noteKugouQrTrace(
+                    `login-status → ${resolved ? 'ok' : 'null'} userId=${user.id || '(none)'} hasNickname=${Boolean(user.nickname)}`,
+                );
+                return resolved;
             } catch (error) {
                 console.warn('[KugouProvider] login-status:error', {
                     name: error instanceof Error ? error.name : 'Error',
                     message: error instanceof Error ? error.message : String(error),
                 });
+                noteKugouQrTrace(`login-status → error ${error instanceof Error ? error.message : String(error)}`);
                 throw error;
             }
         },
@@ -1186,9 +1216,14 @@ export const kugouProvider: OnlineMusicProvider = {
             lastSeenKugouUserId = null;
         },
         async getQrKey() {
+            // A fresh session begins here. Without the reset, the first state of the next scan would
+            // be swallowed as "unchanged" and the trace would start mid-story.
+            lastKugouQrState = '';
             const response = await requestKugou('login_qr_key');
             const data = dataOf(response);
-            return String(valueOf(data, 'qrcode', 'qrkey', 'key', 'ticket') || '');
+            const key = String(valueOf(data, 'qrcode', 'qrkey', 'key', 'ticket') || '');
+            noteKugouQrTrace(`qr:key ${key ? 'ok' : 'failed'}`);
+            return key;
         },
         async createQr(key) {
             const response = await requestKugou('login_qr_create', { key, qrimg: true });
@@ -1199,11 +1234,29 @@ export const kugouProvider: OnlineMusicProvider = {
             const response = await requestKugou('login_qr_check', { key, qrcode: key });
             const data = dataOf(response);
             const status = Number(valueOf(data, 'status', 'code') ?? valueOf(response, 'status', 'code'));
-            if (status === 0) return { state: 'expired' };
-            if (status === 1) return { state: 'waiting' };
-            if (status === 2 || status === 3) return { state: 'scanned' };
-            if (status === 4 || data?.token) return { state: 'confirmed' };
-            return { state: 'error', message: String(valueOf(data, 'message', 'msg', 'error') || '') };
+            const state: QrLoginState['state'] = status === 0 ? 'expired'
+                : status === 1 ? 'waiting'
+                    : status === 2 || status === 3 ? 'scanned'
+                        : status === 4 || data?.token ? 'confirmed'
+                            : 'error';
+            if (state !== lastKugouQrState) {
+                lastKugouQrState = state;
+                const hasAccountId = Boolean(valueOf(data, 'userid', 'userId', 'user_id'));
+                noteKugouQrTrace(`qr:check status=${status} → ${state} hasAccountId=${hasAccountId}`);
+            }
+            if (state === 'error') {
+                return { state, message: String(valueOf(data, 'message', 'msg', 'error') || '') };
+            }
+            return { state };
+        },
+        /** Same shape as the QQ trace so the diagnostic report reads consistently across providers. */
+        async getQrLoginDiagnostics(): Promise<string[]> {
+            if (kugouQrTrace.length === 0) return [];
+            const base = kugouQrTrace[0].at;
+            return kugouQrTrace.map(({ at, line }) => {
+                const offset = String(at - base).padStart(5, ' ');
+                return `kg step +${offset}ms ${line}`;
+            });
         },
     },
     library: {

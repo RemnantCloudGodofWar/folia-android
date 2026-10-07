@@ -107,6 +107,7 @@ import { useOnlineProviderAccountStore } from './stores/useOnlineProviderAccount
 import { useShallow } from 'zustand/react/shallow';
 import { clampMediaVolume, toSafeRemoteUrl } from './utils/appPlaybackHelpers';
 import { getOnlineProviderIdForSong, getPlaybackSongKey, isLocalPlaybackSong, isNavidromePlaybackSong, isStagePlaybackSong } from './utils/appPlaybackGuards';
+import { noteAudioElementEvent } from './utils/mediaDiagnostics';
 import { readLyricOffset, writeLyricOffset } from './utils/lyrics/lyricOffsetMemory';
 import { FALLBACK_AI_DUAL_THEME } from './services/themeSanitizer';
 import { BASE_DUAL_THEME, DAYLIGHT_THEME, DEFAULT_THEME } from './services/baseThemes';
@@ -2575,7 +2576,14 @@ export default function App() {
 
                 currentTime.set(0); // Ensure currentTime is reset when new audio loads
             }}
+            // Did any source ever finish loading? Without this a stuck "正在获取歌曲链接..." cannot be
+            // told apart from a source that resolved fine and then failed inside the element.
+            onCanPlay={(e) => noteAudioElementEvent('canplay', e.currentTarget)}
+            onStalled={(e) => noteAudioElementEvent('stalled', e.currentTarget)}
             onError={(e) => {
+                // Recorded before any of the recovery branches below: the diagnostics report needs
+                // the element's own state, not whichever branch happened to handle it.
+                noteAudioElementEvent('error', e.currentTarget);
                 const audioElement = e.currentTarget;
                 const isActiveDeck = automix.isActiveDeck(audioElement);
                 const reportedDuration = Number.isFinite(audioElement.duration) && audioElement.duration > 0

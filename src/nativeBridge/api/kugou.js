@@ -1,4 +1,5 @@
 import CryptoJS from '../vendor/crypto-es.mjs';
+import { noteLibraryStep } from './libraryTrace.js';
 import {
   clearCookieCache,
   getKGCookie,
@@ -2351,6 +2352,16 @@ async function fetchKGPlayGetData(hash, albumId, albumAudioId, cookieHeader, log
   return '';
 }
 
+/** Only scheme + host: play urls carry signed paths and tokens, so the report must not quote them. */
+function describeKGSchemeAndHost(url) {
+  try {
+    const parsed = new URL(String(url || ''), 'https://www.kugou.com/');
+    return `${parsed.protocol}//${parsed.host}`;
+  } catch (_) {
+    return 'unparseable';
+  }
+}
+
 function normalizePlayUrl(url) {
   url = String(url || '').trim();
   if (!url) return '';
@@ -2422,14 +2433,33 @@ export async function handleKGSongUrl(hash, albumId, albumAudioId, quality, cook
   const cachedUrl = readKGPlayUrlCache(cacheKey);
   if (cachedUrl) return successPayload(cachedUrl, 'cache');
   let trackerResult = { url: '', status: 0, blocked: false };
+  const resolveStartedAt = Date.now();
+  noteLibraryStep('kugou', 'url:start', {
+    hash: playHash.slice(0, 8),
+    quality: qualityCode,
+    level: picked.level,
+    loggedIn: login.loggedIn,
+    isVip: login.isVip,
+  });
   try {
     const hit = await resolveKGSongPlayUrl(playHash, albumId, albumAudioId, cookieHeader, login, qualityCode);
     if (hit && hit.url) {
       writeKGPlayUrlCache(cacheKey, hit.url);
       if (hit.tracker) trackerResult = hit.tracker;
+      noteLibraryStep('kugou', 'url:hit', {
+        source: hit.source,
+        ms: Date.now() - resolveStartedAt,
+        target: describeKGSchemeAndHost(hit.url),
+      });
       return successPayload(hit.url, hit.source);
     }
     if (hit && hit.tracker) trackerResult = hit.tracker;
+    noteLibraryStep('kugou', 'url:miss', {
+      ms: Date.now() - resolveStartedAt,
+      status: trackerResult.status || 0,
+      blocked: !!trackerResult.blocked,
+      loggedIn: login.loggedIn,
+    });
     // One forced auth refresh then retry once for VIP tracks.
     if ((trackerResult.blocked || trackerResult.status === 2 || !hit || !hit.url) && login.loggedIn) {
       if (!auth.refreshed) {
@@ -2444,9 +2474,19 @@ export async function handleKGSongUrl(hash, albumId, albumAudioId, quality, cook
       const retry = await resolveKGSongPlayUrl(playHash, albumId, albumAudioId, cookieHeader, login, qualityCode);
       if (retry && retry.url) {
         writeKGPlayUrlCache(cacheKey, retry.url);
+        noteLibraryStep('kugou', 'url:hit', {
+          source: `${retry.source}+auth-retry`,
+          ms: Date.now() - resolveStartedAt,
+          target: describeKGSchemeAndHost(retry.url),
+        });
         return successPayload(retry.url, retry.source);
       }
       if (retry && retry.tracker) trackerResult = retry.tracker;
+      noteLibraryStep('kugou', 'url:retry-miss', {
+        ms: Date.now() - resolveStartedAt,
+        status: trackerResult.status || 0,
+        blocked: !!trackerResult.blocked,
+      });
     }
   } catch (_) {}
   const blocked = trackerResult.blocked || trackerResult.status === 2;
@@ -2454,6 +2494,14 @@ export async function handleKGSongUrl(hash, albumId, albumAudioId, quality, cook
   const vipCacheNow = await loadKGVipSessionCache(login.userId);
   const vipTokenNow = !!resolveKGEffectiveVipToken(cookieHeader, vipCacheNow);
   const hasAppToken = !!(vipCacheNow && vipCacheNow.appToken);
+  noteLibraryStep('kugou', 'url:fail', {
+    ms: Date.now() - resolveStartedAt,
+    error: !login.loggedIn ? 'LOGIN_REQUIRED' : (likelyVipSong ? 'VIP_REQUIRED' : 'URL_UNAVAILABLE'),
+    trackerStatus: trackerResult.status || 0,
+    loggedIn: login.loggedIn,
+    hasVipToken: vipTokenNow,
+    hasAppToken,
+  });
   return {
     provider: 'kg',
     url: '',

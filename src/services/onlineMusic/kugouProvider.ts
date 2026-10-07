@@ -25,6 +25,7 @@ import {
     normalizeSongTitleForLyricSearch,
 } from '../../utils/lyrics/searchQuery';
 import { removeProviderSessionValue, readProviderSessionValue } from './providerStorage';
+import { noteLibraryStep } from '../../nativeBridge/api/libraryTrace.js';
 import {
     getKugouTransportAvailability,
     hasKugouAuthenticatedSearchSession,
@@ -1063,6 +1064,11 @@ export const kugouProvider: OnlineMusicProvider = {
                 // Search metadata can contain album IDs that do not belong to the returned hash, so retry the same quality by hash alone first.
                 for (const requestVariant of requestVariants) {
                     try {
+                        const requestStartedAt = Date.now();
+                        noteLibraryStep('kugou', 'play:request', {
+                            quality: candidateQuality,
+                            variant: requestVariant.name,
+                        });
                         const response = await requestKugou(requestVariant.operation, requestVariant.params);
                         const data = dataOf(response);
                         const payload = Array.isArray(data) ? data[0] : data;
@@ -1085,6 +1091,11 @@ export const kugouProvider: OnlineMusicProvider = {
                                 resolvedQuality: candidateQuality,
                                 requestVariant: requestVariant.name,
                             });
+                            noteLibraryStep('kugou', 'play:ok', {
+                                ms: Date.now() - requestStartedAt,
+                                variant: requestVariant.name,
+                                quality: candidateQuality,
+                            });
                             return {
                                 // Preserve the upstream candidate here; the shared playback transport normalizes its scheme.
                                 url,
@@ -1101,12 +1112,25 @@ export const kugouProvider: OnlineMusicProvider = {
                             status: valueOf(data, 'status') ?? valueOf(response, 'status'),
                             errorCode: valueOf(data, 'errcode', 'error_code') ?? valueOf(response, 'errcode', 'error_code'),
                         });
+                        noteLibraryStep('kugou', 'play:no-url', {
+                            ms: Date.now() - requestStartedAt,
+                            variant: requestVariant.name,
+                            quality: candidateQuality,
+                            status: valueOf(data, 'status') ?? valueOf(response, 'status'),
+                            errorCode: valueOf(data, 'errcode', 'error_code') ?? valueOf(response, 'errcode', 'error_code'),
+                            reason: valueOf(payload, 'reason', 'error', 'message'),
+                        });
                     } catch (error) {
                         console.warn('[KuGouProvider] playback:quality-failed', {
                             hash,
                             requestedQuality: quality,
                             candidateQuality,
                             requestVariant: requestVariant.name,
+                            error: error instanceof Error ? error.message : String(error),
+                        });
+                        noteLibraryStep('kugou', 'play:error', {
+                            variant: requestVariant.name,
+                            quality: candidateQuality,
                             error: error instanceof Error ? error.message : String(error),
                         });
                     }
@@ -1147,6 +1171,11 @@ export const kugouProvider: OnlineMusicProvider = {
             }
 
             console.warn('[KuGouProvider] playback:unavailable', { hash, requestedQuality: quality, attemptedQualities: qualities });
+            noteLibraryStep('kugou', 'play:exhausted', {
+                hash: hash.slice(0, 8),
+                requestedQuality: quality,
+                attempted: qualities.join('/'),
+            });
             return null;
         },
     },

@@ -136,6 +136,9 @@ const KG_SESSION_CACHE_TTL_MS = 5 * 60 * 1000;
 const KG_PLAY_URL_CACHE_TTL_MS = 4 * 60 * 1000;
 const KG_VIP_STORAGE_TTL_MS = 6 * 60 * 60 * 1000;
 const KG_AUTH_REFRESH_TTL_MS = 50 * 60 * 1000;
+// 缺 vip_token 时的重试间隔：取不到就每 5 分钟再试一次，而不是每一首都打一次登录接口。
+const KG_VIP_TOKEN_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+let kgVipTokenRefreshAt = 0;
 const KG_LOGIN_AES_KEY = '90b8382a1bb4ccdcf063102053fd75b8';
 const KG_LOGIN_AES_IV = 'f063102053fd75b8';
 const KG_RSA_MODULUS = BigInt(
@@ -386,10 +389,19 @@ async function refreshKGLoginByToken(cookieHeader) {
     'https://gateway.kugou.com/login.user.kugou.com',
   ];
   for (const base of bases) {
+    const refreshStartedAt = Date.now();
+    const refreshHost = (() => { try { return new URL(base).host; } catch (_) { return base; } })();
     try {
       // Prefer web cookie — do not inject stale appToken into login_by_token.
       const body = await kgPostAndroidSigned(base, '/v5/login_by_token', cookieHeader, bodyData, {}, {}, { preferAppToken: false });
-      if (!body || Number(body.status) !== 1) continue;
+      const bodyStatus = Number(body && body.status) || 0;
+      noteLibraryStep('kugou', 'auth:refresh:attempt', {
+        host: refreshHost,
+        ms: Date.now() - refreshStartedAt,
+        status: bodyStatus,
+        errCode: Number(body && (body.error_code || body.errcode)) || undefined,
+      });
+      if (!body || bodyStatus !== 1) continue;
       let data = body.data || {};
       if (data.secu_params) {
         const decrypted = kgAesDecryptParams(data.secu_params, encryptParams.key);
@@ -416,6 +428,11 @@ async function refreshKGLoginByToken(cookieHeader) {
         vipLabel: vipType === 33 || vipType === 4 ? '超级VIP' : (vipType || vipToken ? 'VIP' : ''),
         authAt: Date.now(),
       });
+      noteLibraryStep('kugou', 'auth:refresh:ok', {
+        host: refreshHost,
+        hasVipToken: !!vipToken,
+        vipType: vipType || (vipToken ? 6 : 0),
+      });
       return {
         token: nextToken || token,
         vipToken,
@@ -423,8 +440,15 @@ async function refreshKGLoginByToken(cookieHeader) {
         userId: String(data.userid || userId),
         raw: data,
       };
-    } catch (_) {}
+    } catch (error) {
+      noteLibraryStep('kugou', 'auth:refresh:error', {
+        host: refreshHost,
+        ms: Date.now() - refreshStartedAt,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
+  noteLibraryStep('kugou', 'auth:refresh:fail');
   return null;
 }
 
@@ -2459,7 +2483,19 @@ export async function handleKGSongUrl(hash, albumId, albumAudioId, quality, cook
   }
   cookieHeader = cookieHeader || await getKGCookie();
   await syncKGVipCacheWithCookie(cookieHeader);
-  const auth = await ensureKGAndroidAuth(cookieHeader, { requireAppToken: true });
+  // 会员歌曲的取链要带 vip_token，而扫码登录只带回 userid/token；没有 vip_token 时服务端一律
+  // 回 status=2（会员校验不通过），表现为「所有酷狗歌都取不到地址」。这里在缺 vip_token 时强制
+  // 走一次 login_by_token 换取，并限流，避免每次播放都打一次登录接口。
+  const loginBeforeVip = await getKGPlayContext(cookieHeader);
+  const vipTokenBefore = !!resolveKGEffectiveVipToken(cookieHeader, await loadKGVipSessionCache(loginBeforeVip.userId));
+  const shouldFetchVipToken = loginBeforeVip.loggedIn
+    && !vipTokenBefore
+    && (Date.now() - kgVipTokenRefreshAt) > KG_VIP_TOKEN_REFRESH_INTERVAL_MS;
+  if (shouldFetchVipToken) {
+    kgVipTokenRefreshAt = Date.now();
+    noteLibraryStep('kugou', 'auth:vip-token:refresh', { userId: String(loginBeforeVip.userId || '').slice(0, 6) });
+  }
+  const auth = await ensureKGAndroidAuth(cookieHeader, { requireAppToken: true, force: shouldFetchVipToken });
   cookieHeader = auth.cookieHeader || await enrichKGCookieHeader(cookieHeader, { preferAppToken: true });
   const requestedQuality = normalizeQualityPreference(quality);
   const extra = { '128hash': hash };

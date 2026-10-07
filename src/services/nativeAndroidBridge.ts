@@ -15,14 +15,11 @@ const API_HOSTS = [
   'ssl.ptlogin2.qq.com',
   'xui.ptlogin2.qq.com',
   'graph.qq.com',
-  'login-user.kugou.com',
-  'krcs.kugou.com',
-  'lyrics.kugou.com',
-  'wwwapi.kugou.com',
-  'gateway.kugou.com',
-  'mobilecdn.kugou.com',
-  'm.kugou.com',
-  'openapi.kugou.com',
+  // KuGou spreads its API over many hosts (songsearch, complexsearch, trackercdn, vip, ...) and the
+  // set keeps moving, so match the whole domain instead of listing hosts one by one. Only requests
+  // that stay inside the WebView are subject to CORS; anything the bridge calls has to be proxied
+  // here, which is why a missing host silently returns an empty result rather than an error.
+  'kugou.com',
   'api.qrserver.com',
 ];
 
@@ -71,7 +68,8 @@ const base64ToBytes = (value?: string): Uint8Array => {
   return bytes;
 };
 
-const isBridgedUrl = (url: string): boolean => {
+/** True when a request must go through the native OkHttp proxy instead of the WebView's fetch. */
+export const isBridgedApiUrl = (url: string): boolean => {
   try {
     const { hostname } = new URL(url, location.href);
     return API_HOSTS.some((host) => hostname === host || hostname.endsWith(`.${host}`));
@@ -177,7 +175,7 @@ const installFetchShim = (plugin: NativePlugin) => {
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const request = input instanceof Request ? input : null;
     const rawUrl = request?.url ?? String(input);
-    if (!isBridgedUrl(rawUrl)) {
+    if (!isBridgedApiUrl(rawUrl)) {
       return originalFetch(input, init);
     }
 

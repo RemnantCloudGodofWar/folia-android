@@ -1343,6 +1343,9 @@ async function fetchKGTrackerV5Url(hash, albumId, albumAudioId, cookieHeader, lo
       `https://gateway.kugou.com/tracker/v5/url?${qs}`,
     ];
     for (const url of urls) {
+      const httpStartedAt = Date.now();
+      const httpHost = new URL(url).host;
+      noteLibraryStep('kugou', 'url:http:start', { name: 'v5', host: httpHost, clientver: attempt.clientver });
       try {
         const body = await kgFetchJSON(url, {
           mobile: true,
@@ -1362,6 +1365,12 @@ async function fetchKGTrackerV5Url(hash, albumId, albumAudioId, cookieHeader, lo
         });
         if (!body) continue;
         lastStatus = Number(body.status) || 0;
+        noteLibraryStep('kugou', 'url:http:done', {
+          name: 'v5',
+          host: httpHost,
+          ms: Date.now() - httpStartedAt,
+          status: lastStatus,
+        });
         const playUrl = parseKGPlayUrl(body);
         if (playUrl) {
           const harvested = harvestKGVipToken(body);
@@ -1375,7 +1384,14 @@ async function fetchKGTrackerV5Url(hash, albumId, albumAudioId, cookieHeader, lo
           }
           return { url: playUrl, status: lastStatus || 1, blocked: false, vipType, via: 'v5', clientver: attempt.clientver };
         }
-      } catch (_) {}
+      } catch (error) {
+        noteLibraryStep('kugou', 'url:http:error', {
+          name: 'v5',
+          host: httpHost,
+          ms: Date.now() - httpStartedAt,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
   }
   return { url: '', status: lastStatus, blocked: lastStatus === 2, vipType, via: 'v5' };
@@ -2232,10 +2248,30 @@ async function fetchKGTrackerOnce(host, vipType, hash, albumId, albumAudioId, co
   u.searchParams.set('pid', '2');
   u.searchParams.set('pidversion', '3001');
   u.searchParams.set('with_res_tag', '1');
-  const body = await kgFetchJSON(u.toString(), {
-    mobile: true,
-    referer: 'https://www.kugou.com/',
-    headers: buildKGRequestHeaders(cookieHeader, token),
+  const trackerHost = u.host;
+  const trackerStartedAt = Date.now();
+  noteLibraryStep('kugou', 'url:http:start', { name: 'tracker', host: trackerHost, vipType });
+  let body = null;
+  try {
+    body = await kgFetchJSON(u.toString(), {
+      mobile: true,
+      referer: 'https://www.kugou.com/',
+      headers: buildKGRequestHeaders(cookieHeader, token),
+    });
+  } catch (error) {
+    noteLibraryStep('kugou', 'url:http:error', {
+      name: 'tracker',
+      host: trackerHost,
+      ms: Date.now() - trackerStartedAt,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
+  noteLibraryStep('kugou', 'url:http:done', {
+    name: 'tracker',
+    host: trackerHost,
+    ms: Date.now() - trackerStartedAt,
+    status: Number(body && body.status) || 0,
   });
   const url = parseKGPlayUrl(body);
   const status = Number(body && body.status) || 0;

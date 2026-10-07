@@ -5,6 +5,10 @@
 const PAGE_SOURCE = 'folia-web-page';
 const BRIDGE_SOURCE = 'folia-extension-bridge';
 const BRIDGE_VERSION = 'android-0.1.0';
+// A hung upstream (one KuGou CDN node that never answers, say) would otherwise hold the page's
+// request open until OkHttp's own 45s read timeout, which is long enough to look like a freeze.
+// AI and image requests call the plugin directly and keep their own longer budgets.
+const BRIDGED_REQUEST_TIMEOUT_MS = 15000;
 
 const API_HOSTS = [
   'music.163.com',
@@ -186,13 +190,24 @@ const installFetchShim = (plugin: NativePlugin) => {
       headers.set('content-type', serialized.contentType);
     }
 
-    const result = await plugin.httpRequest({
-      url: rawUrl,
-      method,
-      headers: Object.fromEntries(headers.entries()),
-      bodyText: serialized.bodyText || '',
-      bodyBase64: serialized.bodyBase64 || '',
-      redirect: init?.redirect || request?.redirect || 'follow',
+    let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+    const result = await Promise.race([
+      plugin.httpRequest({
+        url: rawUrl,
+        method,
+        headers: Object.fromEntries(headers.entries()),
+        bodyText: serialized.bodyText || '',
+        bodyBase64: serialized.bodyBase64 || '',
+        redirect: init?.redirect || request?.redirect || 'follow',
+      }),
+      new Promise<never>((_resolve, reject) => {
+        timeoutHandle = setTimeout(
+          () => reject(new Error(`Bridged request timed out after ${BRIDGED_REQUEST_TIMEOUT_MS}ms: ${method} ${rawUrl}`)),
+          BRIDGED_REQUEST_TIMEOUT_MS,
+        );
+      }),
+    ]).finally(() => {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
     });
     const responseBytes = base64ToBytes(result.bodyBase64);
     const responseBuffer = responseBytes.buffer.slice(

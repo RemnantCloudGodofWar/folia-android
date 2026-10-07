@@ -2283,21 +2283,61 @@ async function fetchKGTrackerUrl(hash, albumId, albumAudioId, cookieHeader, logi
   return { url: '', status: lastStatus, blocked: lastStatus === 2 };
 }
 
+/**
+ * 单条取链策略的兜底时限。
+ *
+ * raceKGPlayTasks 只在「拿到地址」时提前返回，四条都没拿到就要等它们全部结束；其中任何一条卡在
+ * 一个不响应的 CDN 上（安卓这边要等 OkHttp 的 45s 读超时，甚至叠加多次尝试），整个取链就一直
+ * 不返回，界面永远停在「正在获取歌曲链接...」。这里给每条策略一个上限，并逐条记进诊断轨迹，
+ * 这样既能保证一定会返回，也能看出是哪一条拖住了。
+ */
+const KG_PLAY_STRATEGY_DEADLINE_MS = 12000;
+
+async function runKGPlayStrategy(name, run) {
+  const startedAt = Date.now();
+  noteLibraryStep('kugou', 'url:strategy:start', { name });
+  let timer = null;
+  try {
+    const result = await Promise.race([
+      Promise.resolve().then(run),
+      new Promise((resolve) => {
+        timer = setTimeout(() => resolve({ __timedOut: true }), KG_PLAY_STRATEGY_DEADLINE_MS);
+      }),
+    ]);
+    const ms = Date.now() - startedAt;
+    if (result && result.__timedOut) {
+      noteLibraryStep('kugou', 'url:strategy:timeout', { name, ms });
+      return null;
+    }
+    noteLibraryStep('kugou', 'url:strategy:done', { name, ms, hasUrl: Boolean(result && result.url) });
+    return result;
+  } catch (error) {
+    noteLibraryStep('kugou', 'url:strategy:error', {
+      name,
+      ms: Date.now() - startedAt,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 async function resolveKGSongPlayUrl(hash, albumId, albumAudioId, cookieHeader, login, qualityCode) {
   const vipType = login && login.vipType;
   const q = Number(qualityCode) || 128;
   const tasks = [
-    () => fetchKGTrackerV5Url(hash, albumId, albumAudioId, cookieHeader, vipType, q)
-      .then((result) => (result.url ? { url: result.url, source: 'v5', tracker: result } : null)),
-    () => fetchKGPlayGetData(hash, albumId, albumAudioId, cookieHeader, vipType)
-      .then((url) => (url ? { url, source: 'getdata' } : null)),
-    () => fetchKGTrackerUrl(hash, albumId, albumAudioId, cookieHeader, vipType)
-      .then((result) => (result.url ? { url: result.url, source: 'tracker', tracker: result } : null)),
-    () => fetchKGPlayInfo(hash, albumAudioId, cookieHeader)
+    () => runKGPlayStrategy('v5', () => fetchKGTrackerV5Url(hash, albumId, albumAudioId, cookieHeader, vipType, q)
+      .then((result) => (result.url ? { url: result.url, source: 'v5', tracker: result } : null))),
+    () => runKGPlayStrategy('getdata', () => fetchKGPlayGetData(hash, albumId, albumAudioId, cookieHeader, vipType)
+      .then((url) => (url ? { url, source: 'getdata' } : null))),
+    () => runKGPlayStrategy('tracker', () => fetchKGTrackerUrl(hash, albumId, albumAudioId, cookieHeader, vipType)
+      .then((result) => (result.url ? { url: result.url, source: 'tracker', tracker: result } : null))),
+    () => runKGPlayStrategy('playInfo', () => fetchKGPlayInfo(hash, albumAudioId, cookieHeader)
       .then((info) => {
         const url = pickPlayInfoUrl(info);
         return url ? { url, source: 'playInfo' } : null;
-      }),
+      })),
   ];
   return raceKGPlayTasks(tasks, (result) => result);
 }

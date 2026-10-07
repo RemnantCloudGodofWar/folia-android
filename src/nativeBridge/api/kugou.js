@@ -139,6 +139,8 @@ const KG_AUTH_REFRESH_TTL_MS = 50 * 60 * 1000;
 // 缺 vip_token 时的重试间隔：取不到就每 5 分钟再试一次，而不是每一首都打一次登录接口。
 const KG_VIP_TOKEN_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 let kgVipTokenRefreshAt = 0;
+// 单个登录网关的上限：一条不响应的线路不能把换取 vip_token 这件事整体拖住。
+const KG_AUTH_REFRESH_BASE_DEADLINE_MS = 8000;
 const KG_LOGIN_AES_KEY = '90b8382a1bb4ccdcf063102053fd75b8';
 const KG_LOGIN_AES_IV = 'f063102053fd75b8';
 const KG_RSA_MODULUS = BigInt(
@@ -383,17 +385,29 @@ async function refreshKGLoginByToken(cookieHeader) {
   } catch (_) {
     return null;
   }
+  // 走 gateway 而不是明文 http://login.user.kugou.com：后者在部分移动网络上会一直不响应
+  //（报告里表现为 auth:vip-token:refresh 之后就没有下文），而 gateway.kugou.com 证书正常，
+  // 带上 x-router 指向 login.user.kugou.com 就等价，实测 0.3s 返回。
+  // https://login.user.kugou.com 的证书只覆盖 *.kugou.com，三层域名必然校验失败，只留作兜底。
   const bases = [
-    'http://login.user.kugou.com',
-    'https://login.user.kugou.com',
-    'https://gateway.kugou.com/login.user.kugou.com',
+    { base: 'https://gateway.kugou.com', headers: { 'x-router': 'login.user.kugou.com' } },
+    { base: 'http://login.user.kugou.com', headers: {} },
   ];
-  for (const base of bases) {
+  for (const entry of bases) {
+    const base = entry.base;
     const refreshStartedAt = Date.now();
     const refreshHost = (() => { try { return new URL(base).host; } catch (_) { return base; } })();
+    noteLibraryStep('kugou', 'auth:refresh:request', { host: refreshHost });
     try {
       // Prefer web cookie — do not inject stale appToken into login_by_token.
-      const body = await kgPostAndroidSigned(base, '/v5/login_by_token', cookieHeader, bodyData, {}, {}, { preferAppToken: false });
+      const body = await Promise.race([
+        kgPostAndroidSigned(base, '/v5/login_by_token', cookieHeader, bodyData, {}, entry.headers, { preferAppToken: false }),
+        new Promise((resolve) => setTimeout(() => resolve(null), KG_AUTH_REFRESH_BASE_DEADLINE_MS)),
+      ]);
+      if (!body) {
+        noteLibraryStep('kugou', 'auth:refresh:timeout', { host: refreshHost, ms: Date.now() - refreshStartedAt });
+        continue;
+      }
       const bodyStatus = Number(body && body.status) || 0;
       noteLibraryStep('kugou', 'auth:refresh:attempt', {
         host: refreshHost,

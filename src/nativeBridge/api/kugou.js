@@ -417,10 +417,24 @@ async function refreshKGLoginByToken(cookieHeader) {
       });
       if (!body || bodyStatus !== 1) continue;
       let data = body.data || {};
+      // 会员字段(VIP token / vip_type)在 secu_params 里加密下发，解密失败会看着像「账号没有会员」，
+      // 所以把解密形态与字段名记进报告——只记字段名，不记值。
       if (data.secu_params) {
         const decrypted = kgAesDecryptParams(data.secu_params, encryptParams.key);
-        if (decrypted && typeof decrypted === 'object') data = Object.assign({}, data, decrypted);
-        else if (typeof decrypted === 'string' && decrypted) data.token = decrypted;
+        if (decrypted && typeof decrypted === 'object') {
+          data = Object.assign({}, data, decrypted);
+          noteLibraryStep('kugou', 'auth:refresh:secu', { kind: 'object', keys: Object.keys(decrypted).slice(0, 16).join(',') });
+        } else if (typeof decrypted === 'string' && decrypted) {
+          data.token = decrypted;
+          noteLibraryStep('kugou', 'auth:refresh:secu', { kind: 'string' });
+        } else {
+          noteLibraryStep('kugou', 'auth:refresh:secu', { kind: 'failed' });
+        }
+      } else {
+        noteLibraryStep('kugou', 'auth:refresh:secu', {
+          kind: 'absent',
+          keys: Object.keys(data).slice(0, 16).join(','),
+        });
       }
       const nextToken = String(data.token || data.t || '').trim();
       const vipToken = String(data.vip_token || data.vipToken || '').trim();
@@ -446,6 +460,7 @@ async function refreshKGLoginByToken(cookieHeader) {
         host: refreshHost,
         hasVipToken: !!vipToken,
         vipType: vipType || (vipToken ? 6 : 0),
+        dataKeys: Object.keys(data || {}).slice(0, 20).join(','),
       });
       return {
         token: nextToken || token,

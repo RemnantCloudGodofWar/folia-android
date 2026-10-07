@@ -36,6 +36,9 @@ import {
 
 // src/services/onlineMusic/kugouProvider.ts
 
+/** 一次取链的总预算：超过就认输并报错，别把播放器无限期挂在加载态。 */
+const KUGOU_PLAY_TOTAL_BUDGET_MS = 25000;
+
 const valueOf = (raw: any, ...keys: string[]) => {
     for (const key of keys) {
         if (raw?.[key] !== undefined && raw?.[key] !== null) return raw[key];
@@ -1039,9 +1042,15 @@ export const kugouProvider: OnlineMusicProvider = {
             const qualities = sourceRef?.variant === 'cloud' ? [quality] : qualityFallbacks(quality);
             const albumId = String(sourceRef?.providerData?.albumId || '');
             const albumAudioId = String(sourceRef?.providerData?.albumAudioId || '');
+            // 每档音质最多两种请求变体，桥侧单次请求最坏也要十几秒：不加总预算的话，一首取不到
+            // 地址的歌能把播放器转上好几分钟，用户只会觉得「卡住」而不是「失败」。到点就认输，
+            // 让界面尽快报错，诊断报告也能记录到完整的一次尝试。
+            const playStartedAt = Date.now();
+            const playBudgetLeft = () => KUGOU_PLAY_TOTAL_BUDGET_MS - (Date.now() - playStartedAt);
 
             // Tries the preferred KuGou quality first and degrades until a playable URL is returned.
             for (const candidateQuality of qualities) {
+                if (playBudgetLeft() <= 0) break;
                 const requestVariants = sourceRef?.variant === 'cloud'
                     ? [{ name: 'cloud', operation: 'user_cloud_url' as const, params: {
                         hash, id: String(sourceRef.providerData?.fileId || ''),
@@ -1063,6 +1072,7 @@ export const kugouProvider: OnlineMusicProvider = {
 
                 // Search metadata can contain album IDs that do not belong to the returned hash, so retry the same quality by hash alone first.
                 for (const requestVariant of requestVariants) {
+                    if (playBudgetLeft() <= 0) break;
                     try {
                         const requestStartedAt = Date.now();
                         noteLibraryStep('kugou', 'play:request', {
@@ -1140,7 +1150,7 @@ export const kugouProvider: OnlineMusicProvider = {
             // KuGou's current /song/url can mark certain hashes as unavailable (status: 3)
             // even though the same hash is still playable through the old mobile endpoint.
             // Only use this as a last resort after every quality and hash variant above has failed.
-            if (sourceRef?.variant !== 'cloud') {
+            if (sourceRef?.variant !== 'cloud' && playBudgetLeft() > 0) {
                 try {
                     const legacyResponse = await requestKugouLegacyPlayInfo(hash);
                     const legacyUrl = audioUrlOf(valueOf(legacyResponse, 'url') ?? valueOf(dataOf(legacyResponse), 'url'))
@@ -1175,6 +1185,8 @@ export const kugouProvider: OnlineMusicProvider = {
                 hash: hash.slice(0, 8),
                 requestedQuality: quality,
                 attempted: qualities.join('/'),
+                ms: Date.now() - playStartedAt,
+                budgetMs: KUGOU_PLAY_TOTAL_BUDGET_MS,
             });
             return null;
         },

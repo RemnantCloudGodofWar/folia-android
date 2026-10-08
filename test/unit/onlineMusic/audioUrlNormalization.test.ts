@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { toSafePlaybackUrl, toSafeRemoteUrl } from '@/utils/appPlaybackHelpers';
 
 // test/unit/onlineMusic/audioUrlNormalization.test.ts
@@ -9,10 +9,20 @@ describe('online audio URL normalization', () => {
             .toBe('https://fs.youthandroid2.kugou.com/path/song.mp3');
     });
 
-    it('preserves KuGou HTTP media URLs only for Electron playback', () => {
+    it('preserves KuGou HTTP media URLs for Electron playback', () => {
         const url = 'http://fs.youthandroid2.kugou.com/path/song.mp3';
         expect(toSafePlaybackUrl(url, true)).toBe(url);
         expect(toSafePlaybackUrl(url, false)).toBe('https://fs.youthandroid2.kugou.com/path/song.mp3');
+    });
+
+    it('preserves KuGou HTTP media URLs for the Android native WebView', () => {
+        const url = 'http://fs.youthandroid2.kugou.com/path/song.mp3';
+        vi.stubGlobal('window', { Capacitor: { getPlatform: () => 'android' } });
+        try {
+            expect(toSafePlaybackUrl(url)).toBe(url);
+        } finally {
+            vi.unstubAllGlobals();
+        }
     });
 
     it('repairs a cached comma-joined KuGou URL by keeping one candidate', () => {

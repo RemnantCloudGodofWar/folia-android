@@ -83,12 +83,20 @@ export const toSafeRemoteUrl = (url: string | null | undefined): string | null |
     return normalizedUrl;
 };
 
-// Keeps KuGou's original HTTP media URL only in Electron; Web/PWA retains HTTPS normalization.
+// Keeps KuGou's original HTTP media URL in Electron and the Android native app. KuGou's fs CDN
+// can reject or return invalid media over HTTPS, while both runtimes allow HTTP media playback.
 export const toSafePlaybackUrl = (
     url: string | null | undefined,
     isElectron = typeof window !== 'undefined' && Boolean(window.electron)
 ): string | null | undefined => {
-    if (!url || !isElectron) {
+    if (!url) {
+        return url;
+    }
+
+    const isAndroidNative = typeof window !== 'undefined'
+        && (window as unknown as { Capacitor?: { getPlatform?: () => string } })
+            .Capacitor?.getPlatform?.() === 'android';
+    if (!isElectron && !isAndroidNative) {
         return toSafeRemoteUrl(url);
     }
 

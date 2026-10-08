@@ -191,39 +191,43 @@ test('手机适配下短歌名的箭头不会压进标题文字', async ({ page 
         .toBeGreaterThan(0.3);
 
     // 必须量真实布局。曾经的回归：箭头被测量值/动画偏移推到文字上，短标题时更明显。
-    // 上游在 hover 设备上会把静态层隐藏、换成带动画的动效层，动画中间值不能当布局依据；
-    // 这里改为直接校验「箭头落在容器两端、文字带对称内缩」这两个布局不变量。
+    // 现在改成箭头与歌名同一行的行内布局，这里校验「左箭头在歌名左侧、右箭头在右侧」
+    // 以及歌名层被限制在两个箭头之间，长歌名只能在这个区间里截断。
     const geometry = await page.evaluate(() => {
         const title = document.querySelector<HTMLElement>('[data-folia-track-title="true"]')!;
         const prevZone = document.querySelector<HTMLElement>('[data-folia-track-title-zone="prev"]')!;
         const nextZone = document.querySelector<HTMLElement>('[data-folia-track-title-zone="next"]')!;
         const prevArrow = document.querySelector<HTMLElement>('button[aria-label="Previous track"]')!;
         const nextArrow = document.querySelector<HTMLElement>('button[aria-label="Next track"]')!;
+        const layer = document.querySelector<HTMLElement>('[data-folia-track-title-layer="true"]')!;
         const titleBox = title.getBoundingClientRect();
         const prevBox = prevArrow.getBoundingClientRect();
         const nextBox = nextArrow.getBoundingClientRect();
-        const textStyle = getComputedStyle(document.querySelector<HTMLElement>('[data-folia-track-title-text="true"]')!);
+        const layerBox = layer.getBoundingClientRect();
         return {
-            // 箭头必须各自贴住左右两侧，且顺序不能反。
             prevLeft: prevBox.left,
+            prevRight: prevBox.right,
+            nextLeft: nextBox.left,
             nextRight: nextBox.right,
             titleLeft: titleBox.left,
             titleRight: titleBox.right,
-            prevZonePosition: getComputedStyle(prevZone).position,
-            nextZonePosition: getComputedStyle(nextZone).position,
-            // 文字带左右内缩必须相等；短标题因此两侧都有同样余量。
-            textInsetLeft: textStyle.left,
-            textInsetRight: textStyle.right,
+            layerLeft: layerBox.left,
+            layerRight: layerBox.right,
+            titleDisplay: getComputedStyle(title).display,
+            prevZoneOrder: getComputedStyle(prevZone).order,
+            nextZoneOrder: getComputedStyle(nextZone).order,
             scrollWidth: document.documentElement.scrollWidth,
             viewportWidth: window.innerWidth,
         };
     });
 
-    expect(geometry.prevZonePosition).toBe('absolute');
-    expect(geometry.nextZonePosition).toBe('absolute');
-    expect(geometry.textInsetLeft).toBe(geometry.textInsetRight);
-    expect(Number.parseFloat(geometry.textInsetLeft)).toBeGreaterThanOrEqual(40);
-    // 左侧箭头必须比右侧箭头靠左，且都在标题区内。
+    // 左箭头排在歌名层之前，右箭头排在之后，顺序不能反。
+    expect(geometry.titleDisplay).toBe('flex');
+    expect(Number(geometry.prevZoneOrder)).toBeLessThan(1);
+    expect(Number(geometry.nextZoneOrder)).toBeGreaterThan(1);
+    expect(geometry.prevRight).toBeLessThanOrEqual(geometry.layerLeft + 1);
+    expect(geometry.nextLeft).toBeGreaterThanOrEqual(geometry.layerRight - 1);
+    // 两个箭头都在标题区内。
     expect(geometry.prevLeft).toBeGreaterThanOrEqual(geometry.titleLeft);
     expect(geometry.nextRight).toBeLessThanOrEqual(geometry.titleRight);
     expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.viewportWidth);

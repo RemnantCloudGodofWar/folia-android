@@ -240,32 +240,49 @@ html[data-folia-phone-fit='true'] [data-folia-track-title='true'] {
   padding-right: 0 !important;
 }
 
-/* 歌名占中间带，左右对称内缩；箭头仍是上游原有的绝对定位，只是钉在两侧。 */
+/* 触屏模式：箭头强制固定在歌名两侧，成为同一行的 flex 子项。
+   左箭头紧跟在播放按钮右侧，右箭头在播放模式按钮左侧；歌名占中间剩余宽度，
+   过长时由内层 span 截断成省略号。两侧留给文字的空间完全对称，不存在偏移。 */
+html[data-folia-phone-fit='true'] [data-folia-track-title='true'] {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
 html[data-folia-phone-fit='true'] [data-folia-track-title-layer='true'] {
-  position: relative;
-  width: 100% !important;
+  position: static;
+  order: 1;
+  flex: 1 1 0;
+  width: auto !important;
+  min-width: 0;
   height: 100% !important;
 }
 
 html[data-folia-phone-fit='true'] [data-folia-track-title-zone='prev'] {
-  left: 8px !important;
+  position: static;
+  order: -1;
+  left: auto !important;
   right: auto !important;
+  flex: 0 0 28px;
   justify-content: flex-start !important;
   z-index: 2;
   width: 28px !important;
 }
 
 html[data-folia-phone-fit='true'] [data-folia-track-title-zone='next'] {
+  position: static;
+  order: 2;
   left: auto !important;
-  right: 8px !important;
+  right: auto !important;
+  flex: 0 0 28px;
   justify-content: flex-end !important;
   z-index: 2;
   width: 28px !important;
 }
 
 html[data-folia-phone-fit='true'] [data-folia-track-title-text='true'] {
-  left: 40px !important;
-  right: 40px !important;
+  left: 0 !important;
+  right: 0 !important;
   z-index: 1;
   min-height: 16px;
 }
@@ -373,7 +390,7 @@ html[data-folia-phone-fit='true'] [data-folia-track-title-static='true'] {
   display: block !important;
   width: 100%;
   min-width: 0;
-  padding-inline: var(--folia-title-text-inset);
+  padding-inline: 4px;
   box-sizing: border-box;
   font-size: 12px !important;
   line-height: 32px !important;

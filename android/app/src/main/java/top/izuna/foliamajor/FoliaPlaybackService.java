@@ -39,6 +39,7 @@ public class FoliaPlaybackService extends Service {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private volatile String currentArtworkUrl = "";
     private volatile String appliedArtworkUrl = "";
+    private volatile String lastRequestedCoverUrl = "";
 
     @Override
     public void onCreate() {
@@ -70,8 +71,16 @@ public class FoliaPlaybackService extends Service {
         long position = intent.getLongExtra("position", 0);
         long duration = intent.getLongExtra("duration", 0);
         currentArtworkUrl = coverUrl == null ? "" : coverUrl.trim();
+        if (!currentArtworkUrl.equals(lastRequestedCoverUrl)) {
+            lastRequestedCoverUrl = currentArtworkUrl;
+            FoliaNativePlugin.notePlaybackArtwork(
+                currentArtworkUrl,
+                currentArtworkUrl.isEmpty() ? "none" : "queued",
+                ""
+            );
+        }
 
-        mediaSession.setMetadata(buildMetadata(title, artist, album, duration, null));
+        mediaSession.setMetadata(buildMetadata(title, artist, album, duration, null, currentArtworkUrl));
         mediaSession.setPlaybackState(new PlaybackState.Builder()
             .setActions(
                 PlaybackState.ACTION_PLAY
@@ -88,7 +97,7 @@ public class FoliaPlaybackService extends Service {
         startForeground(NOTIFICATION_ID, notification);
         loadArtwork(currentArtworkUrl, bitmap -> {
             if (!currentArtworkUrl.equals(coverUrl == null ? "" : coverUrl.trim())) return;
-            mediaSession.setMetadata(buildMetadata(title, artist, album, duration, bitmap));
+            mediaSession.setMetadata(buildMetadata(title, artist, album, duration, bitmap, currentArtworkUrl));
             NotificationManager manager = getSystemService(NotificationManager.class);
             if (manager != null) {
                 manager.notify(NOTIFICATION_ID, buildNotification(title, artist, playing, bitmap));
@@ -102,13 +111,18 @@ public class FoliaPlaybackService extends Service {
         String artist,
         String album,
         long duration,
-        Bitmap artwork
+        Bitmap artwork,
+        String coverUrl
     ) {
         MediaMetadata.Builder metadata = new MediaMetadata.Builder()
             .putString(MediaMetadata.METADATA_KEY_TITLE, title == null ? "Folia" : title)
             .putString(MediaMetadata.METADATA_KEY_ARTIST, artist == null ? "" : artist)
             .putString(MediaMetadata.METADATA_KEY_ALBUM, album == null ? "" : album)
             .putLong(MediaMetadata.METADATA_KEY_DURATION, duration);
+        if (coverUrl != null && !coverUrl.isEmpty()) {
+            metadata.putString(MediaMetadata.METADATA_KEY_ART_URI, coverUrl);
+            metadata.putString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI, coverUrl);
+        }
         if (artwork != null) {
             metadata.putBitmap(MediaMetadata.METADATA_KEY_ART, artwork);
             metadata.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, artwork);
@@ -172,14 +186,25 @@ public class FoliaPlaybackService extends Service {
         Bitmap cached = artworkCache.get(value);
         if (cached != null) {
             mainHandler.post(() -> {
-                if (value.equals(currentArtworkUrl)) appliedArtworkUrl = value;
+                if (value.equals(currentArtworkUrl)) {
+                    appliedArtworkUrl = value;
+                    FoliaNativePlugin.notePlaybackArtwork(
+                        value,
+                        "loaded",
+                        "cached " + cached.getWidth() + "x" + cached.getHeight()
+                    );
+                }
                 callback.onLoaded(cached);
             });
             return;
         }
-        if (!(value.startsWith("http://") || value.startsWith("https://"))) return;
+        if (!(value.startsWith("http://") || value.startsWith("https://"))) {
+            FoliaNativePlugin.notePlaybackArtwork(value, "error", "unsupported-cover-url");
+            return;
+        }
         artworkExecutor.execute(() -> {
             Bitmap bitmap = null;
+            String failure = "";
             try (Response response = artworkClient.newCall(new Request.Builder()
                 .url(value)
                 .header("User-Agent", "Mozilla/5.0 (Linux; Android 13; Mobile)")
@@ -189,15 +214,29 @@ public class FoliaPlaybackService extends Service {
                     try (InputStream input = body.byteStream()) {
                         bitmap = BitmapFactory.decodeStream(input);
                     }
+                    if (bitmap == null) failure = "decode-failed";
+                } else {
+                    failure = "http-" + response.code();
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception error) {
+                failure = error.getClass().getSimpleName();
+            }
             if (bitmap != null) artworkCache.put(value, bitmap);
             Bitmap resolved = bitmap;
             if (resolved != null) {
                 mainHandler.post(() -> {
-                    if (value.equals(currentArtworkUrl)) appliedArtworkUrl = value;
+                    if (value.equals(currentArtworkUrl)) {
+                        appliedArtworkUrl = value;
+                        FoliaNativePlugin.notePlaybackArtwork(
+                            value,
+                            "loaded",
+                            resolved.getWidth() + "x" + resolved.getHeight()
+                        );
+                    }
                     callback.onLoaded(resolved);
                 });
+            } else {
+                FoliaNativePlugin.notePlaybackArtwork(value, "error", failure.isEmpty() ? "unknown" : failure);
             }
         });
     }

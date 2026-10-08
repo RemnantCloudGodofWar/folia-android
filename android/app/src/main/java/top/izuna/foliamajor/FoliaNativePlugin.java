@@ -34,6 +34,7 @@ import java.io.OutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.lang.reflect.Method;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -66,6 +67,10 @@ import okhttp3.ResponseBody;
 )
 public class FoliaNativePlugin extends Plugin {
     private static volatile FoliaNativePlugin instance;
+    private static volatile String playbackArtworkCover = "";
+    private static volatile String playbackArtworkStatus = "none";
+    private static volatile String playbackArtworkDetail = "";
+    private static volatile long playbackArtworkAt = 0;
     private final OkHttpClient client = new OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(45, TimeUnit.SECONDS)
@@ -91,6 +96,23 @@ public class FoliaNativePlugin extends Plugin {
         JSObject payload = new JSObject();
         payload.put("action", action);
         plugin.getActivity().runOnUiThread(() -> plugin.notifyListeners("mediaAction", payload));
+    }
+
+    static void notePlaybackArtwork(String coverUrl, String status, String detail) {
+        playbackArtworkCover = describePlaybackArtworkUrl(coverUrl);
+        playbackArtworkStatus = status == null || status.isEmpty() ? "unknown" : status;
+        playbackArtworkDetail = detail == null ? "" : detail;
+        playbackArtworkAt = System.currentTimeMillis();
+    }
+
+    private static String describePlaybackArtworkUrl(String value) {
+        if (value == null || value.isEmpty()) return "";
+        try {
+            URL url = new URL(value);
+            return url.getProtocol() + "://" + url.getHost() + url.getPath();
+        } catch (Exception ignored) {
+            return "invalid";
+        }
     }
 
     @PluginMethod
@@ -379,6 +401,16 @@ public class FoliaNativePlugin extends Plugin {
         } catch (Exception error) {
             call.reject(error.getMessage(), error);
         }
+    }
+
+    @PluginMethod
+    public void getPlaybackDiagnostics(PluginCall call) {
+        JSObject result = new JSObject();
+        result.put("cover", playbackArtworkCover);
+        result.put("status", playbackArtworkStatus);
+        result.put("detail", playbackArtworkDetail);
+        result.put("at", playbackArtworkAt);
+        call.resolve(result);
     }
 
     @PluginMethod

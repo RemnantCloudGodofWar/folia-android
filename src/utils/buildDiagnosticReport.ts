@@ -26,6 +26,22 @@ const readLocalStorageValue = (key: string): string => {
     }
 };
 
+const readNativePlaybackDiagnostics = async (): Promise<{
+    cover?: string;
+    status?: string;
+    detail?: string;
+    at?: number;
+} | null> => {
+    if (typeof window === 'undefined') return null;
+    const plugin = (window as any).Capacitor?.Plugins?.FoliaNative;
+    if (typeof plugin?.getPlaybackDiagnostics !== 'function') return null;
+    try {
+        return await plugin.getPlaybackDiagnostics();
+    } catch {
+        return null;
+    }
+};
+
 /**
  * 底部控制条的实际几何。
  *
@@ -136,6 +152,17 @@ export const buildDiagnosticReport = async (): Promise<string> => {
                 lines.push(...stackLines.map(line => `      ${line}`));
             }
         });
+    }
+
+    const playbackDiagnostics = await readNativePlaybackDiagnostics();
+    lines.push('', 'lock screen artwork:');
+    if (!playbackDiagnostics) {
+        lines.push('  (native diagnostics unavailable)');
+    } else {
+        lines.push(`  cover: ${playbackDiagnostics.cover || '(none)'}`);
+        lines.push(`  status: ${playbackDiagnostics.status || 'unknown'}`);
+        lines.push(`  detail: ${playbackDiagnostics.detail || '(empty)'}`);
+        lines.push(`  at: ${playbackDiagnostics.at ? new Date(playbackDiagnostics.at).toISOString() : '(not recorded)'}`);
     }
 
     lines.push('```');

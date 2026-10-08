@@ -263,7 +263,7 @@ html[data-folia-phone-fit='true'] [data-folia-track-title-text='true'] span {
    rows (~130px tall), which overlaps the upcoming-track panel. Collapse it to the same two-row
    grid used by desktop while keeping phone-sized controls. */
 html[data-folia-phone-fit='true'][data-folia-phone-orientation='portrait'] [data-ponder='player-bar'] {
-  max-height: 58px;
+  max-height: 74px;
   padding: 6px 10px !important;
 }
 
@@ -283,13 +283,13 @@ html[data-folia-phone-fit='true'][data-folia-phone-orientation='portrait'] [data
   grid-column: 2 !important;
   grid-row: 1 !important;
   padding-inline: 0 !important;
-  font-size: 12px !important;
+  font-size: 14px !important;
   line-height: 1.15 !important;
 }
 
 html[data-folia-phone-fit='true'][data-folia-phone-orientation='portrait'] [data-folia-player-bar-play='true'] {
   grid-column: 1 !important;
-  grid-row: 1 / span 2 !important;
+  grid-row: 1 !important;
   width: 40px !important;
   height: 40px !important;
 }
@@ -302,24 +302,34 @@ html[data-folia-phone-fit='true'][data-folia-phone-orientation='portrait'] [data
 html[data-folia-phone-fit='true'][data-folia-phone-orientation='portrait'] [data-ponder-slots] {
   display: flex !important;
   grid-column: 3 !important;
-  grid-row: 1 / span 2 !important;
+  grid-row: 1 !important;
   align-items: center;
   gap: 2px;
 }
 
 html[data-folia-phone-fit='true'][data-folia-phone-orientation='portrait'] [data-folia-player-bar-slot='true'] {
-  padding: 5px !important;
+  padding: 4px !important;
 }
 
 html[data-folia-phone-fit='true'][data-folia-phone-orientation='portrait'] [data-folia-player-bar-slot='true'] svg {
-  width: 16px !important;
-  height: 16px !important;
+  width: 15px !important;
+  height: 15px !important;
 }
 
 html[data-folia-phone-fit='true'][data-folia-phone-orientation='portrait'] [data-folia-player-bar-progress='true'] {
-  grid-column: 2 !important;
+  grid-column: 1 / -1 !important;
   grid-row: 2 !important;
   padding-inline: 0 !important;
+}
+
+html[data-folia-phone-fit='true'][data-folia-phone-orientation='portrait'] [data-folia-track-title-text='true'] span {
+  font-size: 14px !important;
+}
+
+/* The right-side panel/gear toggle shares the bar's baseline; on a portrait phone it lands on top
+   of the enlarged player capsule. Lift it to the same height as the command-palette button. */
+html[data-folia-phone-fit='true'][data-folia-phone-orientation='portrait'] [data-testid='panel-toggle'] {
+  bottom: 120px !important;
 }
 
 html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-ponder='player-bar'] button {

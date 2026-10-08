@@ -337,6 +337,8 @@ html[data-folia-phone-fit='true'][data-folia-phone-orientation='portrait'] [data
 }
 
 html[data-folia-phone-fit='true'][data-folia-phone-orientation='portrait'] [data-folia-track-title-layer='true'] {
+  flex: 1 1 auto;
+  width: 100%;
   height: 32px !important;
 }
 

@@ -2530,27 +2530,45 @@ async function fetchKGTrackerOnce(host, vipType, hash, albumId, albumAudioId, co
 async function fetchKGTrackerUrl(hash, albumId, albumAudioId, cookieHeader, loginVipType) {
   hash = String(hash || '').trim().toLowerCase();
   if (!hash) return { url: '', status: 0, blocked: false };
-  const fastVipTypes = buildKGTrackerFastVipTypes(cookieHeader, loginVipType);
+  const userId = kgCookieUserId(cookieHeader);
+  const cached = await loadKGVipSessionCache(userId);
+  const hasVipEntitlement = Number(loginVipType) > 0
+    || kgCookieVipType(cookieHeader) > 0
+    || !!resolveKGEffectiveVipToken(cookieHeader, cached);
+  let lastStatus = 0;
+  const fastVipTypes = hasVipEntitlement
+    ? buildKGTrackerFastVipTypes(cookieHeader, loginVipType)
+    : ['0'];
   const fastTasks = [];
   KG_TRACKER_FAST_HOSTS.forEach((host) => {
     fastVipTypes.forEach((vipType) => {
-      fastTasks.push(() => fetchKGTrackerOnce(host, vipType, hash, albumId, albumAudioId, cookieHeader));
+      fastTasks.push(() => fetchKGTrackerOnce(host, vipType, hash, albumId, albumAudioId, cookieHeader)
+        .then((result) => {
+          if (Number(result && result.status) > 0) lastStatus = Number(result.status);
+          return result;
+        }));
     });
   });
   const fastHit = await raceKGPlayTasks(fastTasks, (result) => result && result.url ? result : null);
   if (fastHit) return fastHit;
-  let lastStatus = 0;
   const tried = new Set();
   KG_TRACKER_FAST_HOSTS.forEach((host) => {
     fastVipTypes.forEach((vipType) => tried.add(`${host}|${vipType}`));
   });
   const fallbackTasks = [];
+  const fallbackVipTypes = hasVipEntitlement
+    ? buildKGTrackerVipTypeCandidates(cookieHeader, loginVipType)
+    : ['0'];
   for (const host of KG_TRACKER_HOSTS) {
-    for (const vipType of buildKGTrackerVipTypeCandidates(cookieHeader, loginVipType)) {
+    for (const vipType of fallbackVipTypes) {
       const key = `${host}|${vipType}`;
       if (tried.has(key)) continue;
       tried.add(key);
-      fallbackTasks.push(() => fetchKGTrackerOnce(host, vipType, hash, albumId, albumAudioId, cookieHeader));
+      fallbackTasks.push(() => fetchKGTrackerOnce(host, vipType, hash, albumId, albumAudioId, cookieHeader)
+        .then((result) => {
+          if (Number(result && result.status) > 0) lastStatus = Number(result.status);
+          return result;
+        }));
     }
   }
   const fallbackHit = await raceKGPlayTasks(fallbackTasks, (result) => result && result.url ? result : null);
@@ -2566,8 +2584,8 @@ async function fetchKGTrackerUrl(hash, albumId, albumAudioId, cookieHeader, logi
  * 不返回，界面永远停在「正在获取歌曲链接...」。这里给每条策略一个上限，并逐条记进诊断轨迹，
  * 这样既能保证一定会返回，也能看出是哪一条拖住了。
  */
-const KG_PLAY_STRATEGY_DEADLINE_MS = 12000;
-const KG_FAST_SONG_URL_DEADLINE_MS = 1800;
+const KG_PLAY_STRATEGY_DEADLINE_MS = 9000;
+const KG_FAST_SONG_URL_DEADLINE_MS = 1500;
 
 async function runKGPlayStrategy(name, run, deadlineMs = KG_PLAY_STRATEGY_DEADLINE_MS) {
   const startedAt = Date.now();
@@ -2599,16 +2617,25 @@ async function runKGPlayStrategy(name, run, deadlineMs = KG_PLAY_STRATEGY_DEADLI
   }
 }
 
-async function resolveKGSongPlayUrl(hash, albumId, albumAudioId, cookieHeader, login, qualityCode) {
+const kgPlayUrlResolutionInFlight = new Map();
+
+async function resolveKGSongPlayUrlUncached(hash, albumId, albumAudioId, cookieHeader, login, qualityCode) {
   const vipType = login && login.vipType;
   const q = Number(qualityCode) || 128;
-  const fastHit = await runKGPlayStrategy(
-    'lite-v5',
-    () => fetchKGAndroidFastSongUrl(hash, albumId, albumAudioId, cookieHeader, vipType, q)
-      .then((url) => (url ? { url, source: 'android-fast-v5' } : null)),
-    KG_FAST_SONG_URL_DEADLINE_MS,
-  );
-  if (fastHit && fastHit.url) return fastHit;
+  const cached = await loadKGVipSessionCache(kgCookieUserId(cookieHeader));
+  const hasVipEntitlement = Number(vipType) > 0
+    || !!resolveKGEffectiveVipToken(cookieHeader, cached);
+  if (hasVipEntitlement) {
+    const fastHit = await runKGPlayStrategy(
+      'lite-v5',
+      () => fetchKGAndroidFastSongUrl(hash, albumId, albumAudioId, cookieHeader, vipType, q)
+        .then((url) => (url ? { url, source: 'android-fast-v5' } : null)),
+      KG_FAST_SONG_URL_DEADLINE_MS,
+    );
+    if (fastHit && fastHit.url) return fastHit;
+  } else {
+    noteLibraryStep('kugou', 'url:fast-skip', { reason: 'no-vip-entitlement' });
+  }
   const tasks = [
     () => runKGPlayStrategy('v5', () => fetchKGTrackerV5Url(hash, albumId, albumAudioId, cookieHeader, vipType, q)
       .then((result) => (result.url ? { url: result.url, source: 'v5', tracker: result } : null))),
@@ -2623,6 +2650,28 @@ async function resolveKGSongPlayUrl(hash, albumId, albumAudioId, cookieHeader, l
       })),
   ];
   return raceKGPlayTasks(tasks, (result) => result);
+}
+
+async function resolveKGSongPlayUrl(hash, albumId, albumAudioId, cookieHeader, login, qualityCode) {
+  const cacheKey = [
+    String(hash || '').trim().toLowerCase(),
+    String(albumId || ''),
+    String(albumAudioId || ''),
+    Number(qualityCode) || 128,
+    buildKGSessionCacheKey(cookieHeader),
+  ].join('|');
+  const existing = kgPlayUrlResolutionInFlight.get(cacheKey);
+  if (existing) return existing;
+
+  const request = resolveKGSongPlayUrlUncached(hash, albumId, albumAudioId, cookieHeader, login, qualityCode);
+  kgPlayUrlResolutionInFlight.set(cacheKey, request);
+  try {
+    return await request;
+  } finally {
+    if (kgPlayUrlResolutionInFlight.get(cacheKey) === request) {
+      kgPlayUrlResolutionInFlight.delete(cacheKey);
+    }
+  }
 }
 
 async function fetchKGPlayGetData(hash, albumId, albumAudioId, cookieHeader, loginVipType) {
@@ -2795,8 +2844,15 @@ export async function handleKGSongUrl(hash, albumId, albumAudioId, quality, cook
       blocked: !!trackerResult.blocked,
       loggedIn: login.loggedIn,
     });
-    // One forced auth refresh then retry once for VIP tracks.
-    if ((trackerResult.blocked || trackerResult.status === 2 || !hit || !hit.url) && login.loggedIn) {
+    // One forced auth refresh then retry once for VIP tracks. If the first refresh already
+    // resolved to "logged in but no VIP token / no VIP type", another full strategy pass cannot
+    // turn that into an entitlement and only adds another long wait.
+    const currentVipToken = !!resolveKGEffectiveVipToken(
+      cookieHeader,
+      await loadKGVipSessionCache(login.userId),
+    );
+    const retryMayRecoverVip = login.loggedIn && (!auth.refreshed || currentVipToken || Number(login.vipType) > 0);
+    if ((trackerResult.blocked || trackerResult.status === 2 || !hit || !hit.url) && retryMayRecoverVip) {
       if (!auth.refreshed) {
         const forced = await ensureKGAndroidAuth(cookieHeader, { force: true, requireAppToken: true });
         cookieHeader = forced.cookieHeader || cookieHeader;
@@ -2821,6 +2877,12 @@ export async function handleKGSongUrl(hash, albumId, albumAudioId, quality, cook
         ms: Date.now() - resolveStartedAt,
         status: trackerResult.status || 0,
         blocked: !!trackerResult.blocked,
+      });
+    } else if ((trackerResult.blocked || trackerResult.status === 2 || !hit || !hit.url) && login.loggedIn) {
+      noteLibraryStep('kugou', 'url:retry-skip', {
+        reason: 'no-vip-entitlement-after-refresh',
+        hasVipToken: currentVipToken,
+        vipType: Number(login.vipType) || 0,
       });
     }
   } catch (_) {}

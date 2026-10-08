@@ -24,6 +24,7 @@ const API_HOSTS = [
   // that stay inside the WebView are subject to CORS; anything the bridge calls has to be proxied
   // here, which is why a missing host silently returns an empty result rather than an error.
   'kugou.com',
+  'kuwo.cn',
   'api.qrserver.com',
 ];
 

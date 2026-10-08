@@ -1,4 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+
+const bridge = vi.hoisted(() => ({
+    available: vi.fn(),
+    request: vi.fn(),
+}));
+
+vi.mock('@/services/foliaExtensionBridge', () => ({
+    isFoliaExtensionBridgeAvailable: bridge.available,
+    requestFoliaExtension: bridge.request,
+}));
+
 import { requestBodian } from '@/services/onlineMusic/bodianTransport';
 
 // test/unit/onlineMusic/bodianTransport.test.ts
@@ -12,5 +23,19 @@ describe('Bodian page-size adaptation', () => {
         vi.stubGlobal('window', { electron: { bodianRequest } });
         expect(await requestBodian('playlist_tracks', { id: '123', limit, offset: 100, source: 5 })).toEqual(data);
         expect(bodianRequest).toHaveBeenCalledWith('playlist_tracks', { id: '123', limit: 100, offset: 100, source: 5 });
+    });
+
+    it('uses the Android bridge when Electron is not present', async () => {
+        const data = { resultList: [{ id: 1 }] };
+        bridge.available.mockResolvedValue(true);
+        bridge.request.mockResolvedValue({ ok: true, data });
+        vi.stubGlobal('window', { Capacitor: { getPlatform: () => 'android' } });
+
+        expect(await requestBodian('search', { query: 'test', limit: 150, offset: 0 })).toEqual(data);
+        expect(bridge.request).toHaveBeenCalledWith({
+            provider: 'bodian',
+            operation: 'search',
+            params: { query: 'test', limit: 100, offset: 0 },
+        });
     });
 });

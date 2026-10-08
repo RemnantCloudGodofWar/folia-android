@@ -131,6 +131,7 @@ const NowPlayingToast: React.FC<NowPlayingToastProps> = ({
             {visible && (
                 <motion.div
                     ref={frameRef}
+                    data-folia-now-playing-toast="true"
                     initial={{ opacity: 0, x: -32 }}
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0, x: -16 }}

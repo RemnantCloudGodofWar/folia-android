@@ -360,10 +360,53 @@ html[data-folia-phone-fit='true'][data-folia-phone-orientation='portrait'] [data
   font-size: 12px !important;
 }
 
+html[data-folia-phone-fit='true'] [data-folia-track-title-static='true'] {
+  display: block !important;
+  width: 100%;
+  min-width: 0;
+  font-size: 12px !important;
+  line-height: 32px !important;
+}
+
+html[data-folia-phone-fit='true'] [data-folia-track-title='true'] [data-folia-track-title-text='true'] {
+  display: none !important;
+}
+
+/* Pointer devices keep the upstream hover preview; touch devices keep the static title. */
+@media (hover: hover) and (pointer: fine) {
+  html[data-folia-phone-fit='true'] [data-folia-track-title='true']:hover [data-folia-track-title-static='true'] {
+    display: none !important;
+  }
+
+  html[data-folia-phone-fit='true'] [data-folia-track-title='true']:hover [data-folia-track-title-text='true'] {
+    display: flex !important;
+  }
+}
+
 /* The right-side panel/gear toggle shares the bar's baseline; on a portrait phone it lands on top
    of the enlarged player capsule. Lift it to the same height as the command-palette button. */
 html[data-folia-phone-fit='true'][data-folia-phone-orientation='portrait'] [data-testid='panel-toggle'] {
   bottom: 120px !important;
+  right: env(safe-area-inset-right, 0px) !important;
+  width: 44px !important;
+}
+
+html[data-folia-phone-fit='true'][data-folia-phone-orientation='portrait'] [data-testid='panel-toggle'] > div,
+html[data-folia-phone-fit='true'][data-folia-phone-orientation='portrait'] [data-testid='panel-toggle'] button {
+  width: 44px !important;
+  height: 44px !important;
+}
+
+html[data-folia-phone-fit='true'][data-folia-phone-orientation='portrait'] [data-testid='panel-toggle'] svg {
+  width: 18px !important;
+  height: 18px !important;
+}
+
+/* Portrait phones: park the next-up card under the top-left back control instead of over the bar. */
+html[data-folia-phone-fit='true'][data-folia-phone-orientation='portrait'] [data-folia-now-playing-toast='true'] {
+  top: calc(env(safe-area-inset-top, 0px) + 72px) !important;
+  bottom: auto !important;
+  left: calc(env(safe-area-inset-left, 0px) + 12px) !important;
 }
 
 html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-ponder='player-bar'] button {

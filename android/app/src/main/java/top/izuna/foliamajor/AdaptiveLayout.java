@@ -51,6 +51,8 @@ final class AdaptiveLayout {
             WindowInsetsControllerCompat controller = WindowCompat.getInsetsController(window, decor);
 
             // targetSdk 35+ 已经强制 edge-to-edge，这里唯一还需要做的就是系统栏的显隐。
+            // 再次声明 decor 布局策略，避免启动阶段被系统栏重新插入 inset。
+            WindowCompat.setDecorFitsSystemWindows(window, !enabled);
             if (enabled) {
                 controller.hide(WindowInsetsCompat.Type.systemBars());
                 controller.setSystemBarsBehavior(

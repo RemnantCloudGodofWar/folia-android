@@ -16,9 +16,38 @@ public class MainActivity extends BridgeActivity {
         WebSettings settings = webView.getSettings();
         settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
-        // 用户在设置里开过「自适应屏幕分辨率」的话，启动时就恢复沉浸式全屏。
-        // 万一这台设备上应用失败，直接回滚开关，避免每次启动都卡在同一处。
-        if (AdaptiveLayout.isEnabled(this) && !AdaptiveLayout.apply(this, webView, true)) {
+        restoreAdaptiveLayout(webView);
+        // 启动时窗口焦点和系统栏状态还会变一次，只应用一遍会被后面的 inset 恢复覆盖。
+        webView.postDelayed(() -> restoreAdaptiveLayout(webView), 500);
+        webView.postDelayed(() -> restoreAdaptiveLayout(webView), 1500);
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        if (getBridge() != null) {
+            WebView webView = getBridge().getWebView();
+            if (webView != null) {
+                webView.postDelayed(() -> restoreAdaptiveLayout(webView), 100);
+            }
+        }
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus && getBridge() != null) {
+            WebView webView = getBridge().getWebView();
+            if (webView != null) {
+                webView.post(() -> restoreAdaptiveLayout(webView));
+            }
+        }
+    }
+
+    // 用户在设置里开过「自适应屏幕分辨率」的话，恢复沉浸式全屏。失败时回滚，避免反复启动就崩。
+    private void restoreAdaptiveLayout(WebView webView) {
+        if (!AdaptiveLayout.isEnabled(this)) return;
+        if (!AdaptiveLayout.apply(this, webView, true)) {
             AdaptiveLayout.setEnabled(this, false);
         }
     }

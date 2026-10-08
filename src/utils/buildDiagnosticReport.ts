@@ -1,6 +1,9 @@
 import { getLibraryTraceLines } from '../nativeBridge/api/libraryTrace.js';
 import { getQrLoginTraceLines } from '../nativeBridge/api/qrLoginTrace.js';
+import { useAudioSettingsStore } from '../stores/useAudioSettingsStore';
+import { usePlaybackStore } from '../stores/usePlaybackStore';
 import { readCrashDiagnostics } from './crashDiagnostics';
+import { readPlaybackContinuitySnapshot } from './mediaDiagnostics';
 
 // src/utils/buildDiagnosticReport.ts
 // 设置 → 帮助 → 复制诊断数据。给用户原样贴进 issue 用，所以字段固定为英文并包在代码块里。
@@ -24,6 +27,50 @@ const readLocalStorageValue = (key: string): string => {
     } catch {
         return 'unavailable';
     }
+};
+
+const formatSeconds = (value: number | null): string => (
+    value === null || !Number.isFinite(value) ? 'n/a' : `${value.toFixed(2)}s`
+);
+
+const formatMilliseconds = (value: number | null): string => (
+    value === null || !Number.isFinite(value) ? 'n/a' : `${Math.round(value)}ms`
+);
+
+/**
+ * 播放连续性现场：缓冲中断、网络停滞、主线程卡顿、输出链路和音频效果一起导出，避免把
+ * 网易云的偶发卡顿误判成取链问题，也避免把用户开着的噪声音效当成平台故障。
+ */
+const readPlaybackContinuityLines = (): string[] => {
+    const continuity = readPlaybackContinuitySnapshot();
+    const audioSettings = useAudioSettingsStore.getState();
+    const playback = usePlaybackStore.getState();
+    const equalizer = audioSettings.audioEqualizerSettings;
+    const effects = equalizer.effects;
+    const lastEventAt = continuity.lastEventAt
+        ? new Date(continuity.lastEventAt).toISOString()
+        : '(not recorded)';
+    return [
+        `  source: ${continuity.source}`,
+        `  deck: ${continuity.deck} readyState=${continuity.readyState} networkState=${continuity.networkState}`,
+        `  buffer: ahead=${formatSeconds(continuity.bufferedAheadSec)} ranges=${continuity.bufferedRanges}`,
+        `  interruptions: waiting=${continuity.waitingCount} total=${formatMilliseconds(continuity.waitingTotalMs)}`
+            + ` max=${formatMilliseconds(continuity.waitingMaxMs)} last=${formatMilliseconds(continuity.lastWaitingMs)}`,
+        `  network stalls: stalled=${continuity.stalledCount} errors=${continuity.errorCount}`,
+        `  main-thread stalls: count=${continuity.clockLagCount}`
+            + ` total=${formatMilliseconds(continuity.clockLagTotalMs)}`
+            + ` max=${formatMilliseconds(continuity.clockLagMaxMs)}`
+            + ` last=${formatMilliseconds(continuity.lastClockLagMs)}`,
+        `  last audio event: ${continuity.lastEvent} at=${lastEventAt}`,
+        `  audio context: state=${continuity.audioContextState}`
+            + ` sampleRate=${continuity.audioContextSampleRate ?? 'n/a'}`
+            + ` baseLatency=${formatSeconds(continuity.audioContextBaseLatencySec)}`
+            + ` outputLatency=${formatSeconds(continuity.audioContextOutputLatencySec)}`,
+        `  output settings: quality=${audioSettings.audioQuality} replayGain=${playback.replayGainMode}`
+            + ` fade=${audioSettings.playbackFadeEnabled ? 'on' : 'off'}`,
+        `  effects: enabled=${equalizer.enabled ? 'yes' : 'no'} noise=${effects.noise} crush=${effects.crush}`
+            + ` drive=${effects.drive} wow=${effects.wow} punch=${effects.punch}`,
+    ];
 };
 
 const readNativePlaybackDiagnostics = async (): Promise<{
@@ -119,6 +166,9 @@ export const buildDiagnosticReport = async (): Promise<string> => {
         `  bottom bar offset: ${readLocalStorageValue('player_bottom_bar_offset')} (base 32, max scales with viewport height)`,
         `  command palette auto hide: ${readLocalStorageValue('auto_hide_command_palette_button')}`,
         `  hide player progress bar: ${readLocalStorageValue('hide_player_progress_bar')}`,
+        '',
+        'playback continuity:',
+        ...readPlaybackContinuityLines(),
         '',
         'bottom bar geometry:',
         ...readBottomBarGeometry(),

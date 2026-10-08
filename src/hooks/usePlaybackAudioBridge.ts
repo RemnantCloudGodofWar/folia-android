@@ -17,6 +17,7 @@ import { setPlayerState } from '../stores/usePlaybackStore';
 import { useTranslation } from 'react-i18next';
 import { usePlaybackStore } from '../stores/usePlaybackStore';
 import { useAppViewStore } from '../stores/useAppViewStore';
+import { noteAudioContext } from '../utils/mediaDiagnostics';
 
 // src/hooks/usePlaybackAudioBridge.ts
 
@@ -139,6 +140,7 @@ export function usePlaybackAudioBridge({
             const AudioContextClass = window.AudioContext || (window as Window & typeof globalThis & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
             const ctx = new AudioContextClass();
             audioContextRef.current = ctx;
+            noteAudioContext(ctx);
 
             const analyser = ctx.createAnalyser();
             analyser.fftSize = 2048;

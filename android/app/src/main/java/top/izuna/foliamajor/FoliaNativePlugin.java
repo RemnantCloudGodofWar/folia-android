@@ -33,6 +33,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -219,7 +220,22 @@ public class FoliaNativePlugin extends Plugin {
                 MediaType mediaType = MediaType.parse(headers == null ? null : headers.optString("content-type", null));
                 body = RequestBody.create(mediaType, bodyText);
             }
-            builder.method(method == null ? "GET" : method, body);
+            String requestMethod = method == null ? "GET" : method;
+            if (body != null && "GET".equalsIgnoreCase(requestMethod)) {
+                // Bodian's playback endpoints use GET with a JSON body. OkHttp's public
+                // method() rejects that combination, so set the validated request body
+                // through its own setter after selecting GET.
+                builder.method("GET", null);
+                try {
+                    Method setBody = Request.Builder.class.getMethod("setBody$okhttp", RequestBody.class);
+                    setBody.invoke(builder, body);
+                } catch (ReflectiveOperationException error) {
+                    call.reject("GET request body is unsupported by this runtime", error);
+                    return;
+                }
+            } else {
+                builder.method(requestMethod, body);
+            }
 
             OkHttpClient requestClient = client;
             if ("manual".equals(redirect)) {

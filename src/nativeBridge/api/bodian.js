@@ -137,7 +137,7 @@ const createClient = (deviceId) => ({
     }
     const session = anonymous ? null : getSession();
     const query = { ...params, uid: String(session?.uid || '-1'), token: session?.token || '' };
-    const bodyText = method === 'GET' || body === undefined ? '' : JSON.stringify(body);
+    const bodyText = body === undefined ? '' : JSON.stringify(body);
     if (signed) {
       query.timestamp = String(Date.now());
       query.sign = signQuery(path, query, bodyText);

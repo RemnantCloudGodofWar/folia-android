@@ -1626,14 +1626,12 @@ async function fetchKGAndroidFastSongUrl(hash, albumId, albumAudioId, cookieHead
   const dfid = kgCookieDfid(cookieHeader) || kgRandomString(24);
   const clienttime = Math.floor(Date.now() / 1000);
   const cached = await loadKGVipSessionCache(userId);
-  const vipToken = resolveKGEffectiveVipToken(cookieHeader, cached);
-  const vipType = resolveKGTrackerVipType(cookieHeader, loginVipType || (cached && cached.vipType));
   const params = {
     album_id: Number(albumId) || 0,
     area_code: 1,
     hash,
     ssa_flag: 'is_fromtrack',
-    version: KG_ANDROID_CLIENTVER,
+    version: KG_TRACKER_CLIENTVER,
     page_id: KG_SONG_PAGE_ID,
     quality: quality || 128,
     album_audio_id: Number(albumAudioId) || 0,
@@ -1645,7 +1643,7 @@ async function fetchKGAndroidFastSongUrl(hash, albumId, albumAudioId, cookieHead
     ppage_id: KG_SONG_PPID,
     cdnBackup: 1,
     module: '',
-    clientver: KG_ANDROID_CLIENTVER,
+    clientver: KG_TRACKER_CLIENTVER,
     dfid,
     mid,
     uuid: '-',
@@ -1654,9 +1652,9 @@ async function fetchKGAndroidFastSongUrl(hash, albumId, albumAudioId, cookieHead
     token,
     userid: userId,
   };
-  if (vipType) params.vipType = vipType;
-  if (vipToken) params.vip_token = vipToken;
   params.key = buildKGTrackerKey(hash, mid, userId, KG_ANDROID_APPID);
+  // KuGouMusicApi's song_url passes `notSign`, but its request layer checks `notSignature`;
+  // the real client still sends this Android signature.
   params.signature = signatureKGAndroidParams(params);
   const qs = Object.keys(params)
     .map((key) => `${encodeURIComponent(key)}=${encodeURIComponent(params[key])}`)
@@ -1708,15 +1706,13 @@ async function fetchKGTrackerV5Url(hash, albumId, albumAudioId, cookieHeader, lo
   const token = kgCookieToken(cookieHeader) || '';
   if (!userId || userId === '0' || !token) return { url: '', status: 0, blocked: false };
   const mid = await getKGMid(cookieHeader);
-  const dfid = kgCookieDfid(cookieHeader) || '-';
+  const dfid = kgCookieDfid(cookieHeader) || kgRandomString(24);
   const cached = await loadKGVipSessionCache(userId);
-  const vipToken = resolveKGEffectiveVipToken(cookieHeader, cached);
   const vipType = resolveKGTrackerVipType(cookieHeader, loginVipType || (cached && cached.vipType));
+  const vipToken = resolveKGEffectiveVipToken(cookieHeader, cached);
   const qualityCode = Number(quality) || 128;
   // Match KuGouMusicApi song_url: version/clientver=11430, no vipType in query; then fallbacks.
   const attempts = [
-    { clientver: Number(KG_ANDROID_CLIENTVER), withVipType: true },
-    { clientver: KG_TRACKER_CLIENTVER, withVipType: true },
     { clientver: KG_TRACKER_CLIENTVER, withVipType: false },
   ];
   const leanCookie = buildKGLeanCookie(cookieHeader);
@@ -1749,9 +1745,10 @@ async function fetchKGTrackerV5Url(hash, albumId, albumAudioId, cookieHeader, lo
       userid: userId,
       token,
     };
-    if (attempt.withVipType && vipType) params.vipType = vipType;
-    if (vipToken) params.vip_token = vipToken;
+    if (attempt.withVipType && Number(loginVipType) > 0) params.vipType = loginVipType;
     params.key = buildKGTrackerKey(hash, mid, userId, KG_ANDROID_APPID);
+    // Match KuGouMusicApi's actual request layer: `notSign` is not the option it reads,
+    // so `/v5/url` must still carry the Android signature.
     params.signature = signatureKGAndroidParams(params);
     const qs = Object.keys(params)
       .map((key) => `${encodeURIComponent(key)}=${encodeURIComponent(params[key])}`)

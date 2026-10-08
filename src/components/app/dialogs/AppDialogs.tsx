@@ -27,6 +27,7 @@ const AppDialogs: React.FC<AppDialogsProps> = ({ model }) => {
                     {statusToast && (
                         <motion.div
                             key={statusToast.toastKey}
+                            data-folia-status-toast="true"
                             initial={{ opacity: 0, y: -20, x: '-50%' }}
                             animate={{ opacity: 1, y: 30, x: '-50%' }}
                             exit={{ opacity: 0, y: -20, x: '-50%' }}

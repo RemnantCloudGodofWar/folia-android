@@ -112,6 +112,41 @@ html[data-folia-phone-fit='true'] [data-folia-themed-dialog] h2 {
   line-height: 1.35;
 }
 
+/* Status prompts ("song unavailable", playback errors) are desktop-sized pills. Cap them to the
+   phone viewport and shrink their controls so they do not cover the page or run off-screen. */
+html[data-folia-phone-fit='true'] [data-folia-status-toast='true'] {
+  max-width: min(calc(100vw - 32px), 24rem);
+  padding: 8px 12px !important;
+  border-radius: 18px !important;
+  gap: 8px !important;
+  font-size: 12px !important;
+}
+
+html[data-folia-phone-fit='true'] [data-folia-status-toast='true'] > span {
+  min-width: 0;
+  line-height: 1.3;
+}
+
+html[data-folia-phone-fit='true'] [data-folia-status-toast='true'] button {
+  padding: 4px 8px !important;
+  font-size: 11px !important;
+  flex-shrink: 0;
+}
+
+html[data-folia-phone-fit='true'] [data-folia-status-toast='true'] svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+html[data-folia-phone-fit='true'][data-folia-phone-orientation='portrait'] [data-folia-status-toast='true'] {
+  max-width: min(calc(100vw - 32px), 22rem);
+}
+
+html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-folia-status-toast='true'] {
+  max-width: min(72vw, 28rem);
+}
+
 html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-folia-themed-dialog] {
   padding: 12px !important;
 }
@@ -187,6 +222,69 @@ html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [dat
 }
 
 html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-folia-player-bar-progress='true'] {
+  padding-inline: 0 !important;
+}
+
+/* Portrait phone fit: the default sub-sm layout stacks title, transport and progress into three
+   rows (~130px tall), which overlaps the upcoming-track panel. Collapse it to the same two-row
+   grid used by desktop while keeping phone-sized controls. */
+html[data-folia-phone-fit='true'][data-folia-phone-orientation='portrait'] [data-ponder='player-bar'] {
+  max-height: 58px;
+  padding: 6px 10px !important;
+}
+
+html[data-folia-phone-fit='true'][data-folia-phone-orientation='portrait'] [data-folia-player-bar-expanded='true'] {
+  width: min(calc(100vw - 40px), 22rem) !important;
+  max-width: min(calc(100vw - 40px), 22rem) !important;
+}
+
+html[data-folia-phone-fit='true'][data-folia-phone-orientation='portrait'] [data-folia-player-bar-expanded='true'] > div {
+  grid-template-columns: auto minmax(0, 1fr) auto !important;
+  grid-template-rows: auto auto !important;
+  column-gap: 8px !important;
+  row-gap: 2px !important;
+}
+
+html[data-folia-phone-fit='true'][data-folia-phone-orientation='portrait'] [data-folia-player-bar-title='true'] {
+  grid-column: 2 !important;
+  grid-row: 1 !important;
+  padding-inline: 0 !important;
+  font-size: 12px !important;
+  line-height: 1.15 !important;
+}
+
+html[data-folia-phone-fit='true'][data-folia-phone-orientation='portrait'] [data-folia-player-bar-play='true'] {
+  grid-column: 1 !important;
+  grid-row: 1 / span 2 !important;
+  width: 40px !important;
+  height: 40px !important;
+}
+
+html[data-folia-phone-fit='true'][data-folia-phone-orientation='portrait'] [data-folia-player-bar-play='true'] svg {
+  width: 17px;
+  height: 17px;
+}
+
+html[data-folia-phone-fit='true'][data-folia-phone-orientation='portrait'] [data-ponder-slots] {
+  display: flex !important;
+  grid-column: 3 !important;
+  grid-row: 1 / span 2 !important;
+  align-items: center;
+  gap: 2px;
+}
+
+html[data-folia-phone-fit='true'][data-folia-phone-orientation='portrait'] [data-folia-player-bar-slot='true'] {
+  padding: 5px !important;
+}
+
+html[data-folia-phone-fit='true'][data-folia-phone-orientation='portrait'] [data-folia-player-bar-slot='true'] svg {
+  width: 16px !important;
+  height: 16px !important;
+}
+
+html[data-folia-phone-fit='true'][data-folia-phone-orientation='portrait'] [data-folia-player-bar-progress='true'] {
+  grid-column: 2 !important;
+  grid-row: 2 !important;
   padding-inline: 0 !important;
 }
 

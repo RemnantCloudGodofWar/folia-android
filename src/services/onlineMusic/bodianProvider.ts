@@ -7,6 +7,7 @@ import { bodianPage, normalizeBodianCollection, normalizeBodianSong, normalizeBo
 import { bodianCatalog } from './bodianCatalog';
 import { bodianLibrary, clearBodianLibraryCache } from './bodianLibrary';
 import { bodianMutations } from './bodianMutations';
+import { proxyNativeRemoteAudioUrl } from '../nativeRemoteAudio';
 import type { BodianLyricsPayload } from 'bodian-music-api';
 
 // src/services/onlineMusic/bodianProvider.ts
@@ -76,7 +77,7 @@ export const bodianProvider: OnlineMusicProvider = {
             });
             // Full-track caches and timing must never ingest a 30-second preview as the complete song.
             if (audio.preview) throw new OnlineProviderError('preview-only', 'Bodian only offers a preview; sign in with an eligible account', 'bodian');
-            return audio;
+            return { ...audio, url: await proxyNativeRemoteAudioUrl(audio.url) };
         },
         getAvailability(song) {
             return song.sourceRef?.kind === 'online' && song.sourceRef.providerData?.unavailable

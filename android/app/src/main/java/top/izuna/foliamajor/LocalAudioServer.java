@@ -17,11 +17,19 @@ import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.URLDecoder;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
+import okhttp3.ResponseBody;
 
 /**
  * 本地音频流服务器。
@@ -34,9 +42,15 @@ import java.util.concurrent.Executors;
  */
 final class LocalAudioServer {
     private static final String AUDIO_PATH_PREFIX = "/audio/";
+    private static final String REMOTE_AUDIO_PATH_PREFIX = "/remote-audio/";
     private static final String IMPORTED_PREFIX = "imported-";
     private final Context context;
     private final ExecutorService executor = Executors.newCachedThreadPool();
+    private final OkHttpClient remoteAudioClient = new OkHttpClient.Builder()
+        .followRedirects(true)
+        .followSslRedirects(true)
+        .build();
+    private final Map<String, String> remoteAudioUrls = new LinkedHashMap<>();
     private ServerSocket serverSocket;
     private int port;
 
@@ -63,6 +77,27 @@ final class LocalAudioServer {
 
     int getPort() {
         return port;
+    }
+
+    synchronized String registerRemoteAudio(String value) throws IOException {
+        URL url = new URL(value);
+        String host = url.getHost() == null ? "" : url.getHost().toLowerCase();
+        if (!("http".equals(url.getProtocol()) || "https".equals(url.getProtocol()))
+            || !(host.equals("kuwo.cn") || host.endsWith(".kuwo.cn"))) {
+            throw new IOException("Unsupported remote audio host");
+        }
+        int localPort = start();
+        String token = Base64.getUrlEncoder().withoutPadding()
+            .encodeToString(value.getBytes(StandardCharsets.UTF_8));
+        synchronized (remoteAudioUrls) {
+            remoteAudioUrls.remove(token);
+            remoteAudioUrls.put(token, value);
+            while (remoteAudioUrls.size() > 128) {
+                String oldest = remoteAudioUrls.keySet().iterator().next();
+                remoteAudioUrls.remove(oldest);
+            }
+        }
+        return "http://127.0.0.1:" + localPort + REMOTE_AUDIO_PATH_PREFIX + token;
     }
 
     /** 复制进私有目录的音频存放位置。 */
@@ -96,6 +131,19 @@ final class LocalAudioServer {
             String path = requestParts[1];
             int query = path.indexOf('?');
             if (query >= 0) path = path.substring(0, query);
+            if (path.startsWith(REMOTE_AUDIO_PATH_PREFIX)) {
+                String token = URLDecoder.decode(path.substring(REMOTE_AUDIO_PATH_PREFIX.length()), "UTF-8");
+                String remoteUrl;
+                synchronized (remoteAudioUrls) {
+                    remoteUrl = remoteAudioUrls.get(token);
+                }
+                if (remoteUrl == null) {
+                    writeStatus(output, 404, "Not Found");
+                    return;
+                }
+                streamRemoteAudio(output, requestParts, headers, remoteUrl);
+                return;
+            }
             if (!path.startsWith(AUDIO_PATH_PREFIX)) {
                 writeStatus(output, 404, "Not Found");
                 return;
@@ -153,6 +201,57 @@ final class LocalAudioServer {
             guessMimeType(fileName),
             () -> new FileInputStream(target)
         );
+    }
+
+    private void streamRemoteAudio(
+        BufferedOutputStream output,
+        String[] requestParts,
+        Map<String, String> headers,
+        String remoteUrl
+    ) throws IOException {
+        Request.Builder request = new Request.Builder()
+            .url(remoteUrl)
+            .get()
+            .header("User-Agent", "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36")
+            .header("Referer", "https://www.kuwo.cn/");
+        String range = headers.get("range");
+        if (range != null) request.header("Range", range);
+
+        try (Response response = remoteAudioClient.newCall(request.build()).execute()) {
+            ResponseBody body = response.body();
+            if (!response.isSuccessful() || body == null) {
+                writeStatus(output, response.code(), response.message());
+                return;
+            }
+            String contentType = response.header("Content-Type", "audio/mpeg");
+            long contentLength = body.contentLength();
+            String contentRange = response.header("Content-Range");
+            StringBuilder responseHead = new StringBuilder();
+            responseHead.append(response.code() == 206
+                ? "HTTP/1.1 206 Partial Content\r\n"
+                : "HTTP/1.1 200 OK\r\n");
+            responseHead.append("Content-Type: ").append(contentType).append("\r\n");
+            responseHead.append("Accept-Ranges: bytes\r\n");
+            responseHead.append("Access-Control-Allow-Origin: *\r\n");
+            responseHead.append("Connection: close\r\n");
+            if (contentLength >= 0) {
+                responseHead.append("Content-Length: ").append(contentLength).append("\r\n");
+            }
+            if (contentRange != null) {
+                responseHead.append("Content-Range: ").append(contentRange).append("\r\n");
+            }
+            responseHead.append("\r\n");
+            output.write(responseHead.toString().getBytes(StandardCharsets.US_ASCII));
+
+            if (!"HEAD".equals(requestParts[0])) {
+                try (InputStream audio = body.byteStream()) {
+                    byte[] buffer = new byte[64 * 1024];
+                    int read;
+                    while ((read = audio.read(buffer)) != -1) output.write(buffer, 0, read);
+                }
+            }
+            output.flush();
+        }
     }
 
     private interface StreamSupplier {

@@ -362,6 +362,25 @@ public class FoliaNativePlugin extends Plugin {
     }
 
     /** 自适应屏幕分辨率开关：关闭＝跟随系统原生布局，打开＝沉浸式全屏铺满。 */
+    /** Wraps an issued Kuwo/Bodian audio URL behind the local Range-capable stream server. */
+    @PluginMethod
+    public void registerRemoteAudio(PluginCall call) {
+        String url = call.getString("url", "");
+        if (url == null || url.isEmpty()) {
+            call.reject("Missing remote audio url");
+            return;
+        }
+        try {
+            if (localAudioServer == null) localAudioServer = new LocalAudioServer(getContext());
+            String localUrl = localAudioServer.registerRemoteAudio(url);
+            JSObject result = new JSObject();
+            result.put("url", localUrl);
+            call.resolve(result);
+        } catch (Exception error) {
+            call.reject(error.getMessage(), error);
+        }
+    }
+
     @PluginMethod
     public void setAdaptiveLayout(PluginCall call) {
         boolean enabled = Boolean.TRUE.equals(call.getBoolean("enabled", false));

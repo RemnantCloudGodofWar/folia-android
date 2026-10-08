@@ -9,6 +9,7 @@ import com.getcapacitor.BridgeActivity;
 public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        CrashDiagnostics.install(getApplicationContext());
         registerPlugin(FoliaNativePlugin.class);
         super.onCreate(savedInstanceState);
         WebView webView = getBridge().getWebView();

@@ -604,6 +604,35 @@ public class FoliaNativePlugin extends Plugin {
      * 只删 App 自己的副本，绝不碰用户的原文件；扫描设备音乐库（MediaStore）得到的歌不在
      * 这里删除，它们只是引用，用户的原文件必须保留。
      */
+    /** Returns the bounded native crash trail for the settings diagnostics report. */
+    @PluginMethod
+    public void getCrashDiagnostics(PluginCall call) {
+        JSObject result = new JSObject();
+        result.put("history", CrashDiagnostics.read(getContext()));
+        call.resolve(result);
+    }
+
+    /** Clears only the crash trail; normal app data and sessions are untouched. */
+    @PluginMethod
+    public void clearCrashDiagnostics(PluginCall call) {
+        CrashDiagnostics.clear(getContext());
+        call.resolve();
+    }
+
+    /** Stores a WebView error next to native crashes so the next diagnostic copy includes it. */
+    @PluginMethod
+    public void recordRuntimeDiagnostic(PluginCall call) {
+        CrashDiagnostics.recordText(
+            getContext(),
+            call.getString("source", "webview"),
+            call.getString("thread", "webview"),
+            call.getString("type", "error"),
+            call.getString("message", ""),
+            call.getString("stack", "")
+        );
+        call.resolve();
+    }
+
     @PluginMethod
     public void deleteImportedAudio(PluginCall call) {
         JSArray refs = call.getArray("refs", new JSArray());

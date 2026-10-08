@@ -1,5 +1,6 @@
 import { getLibraryTraceLines } from '../nativeBridge/api/libraryTrace.js';
 import { getQrLoginTraceLines } from '../nativeBridge/api/qrLoginTrace.js';
+import { readCrashDiagnostics } from './crashDiagnostics';
 
 // src/utils/buildDiagnosticReport.ts
 // 设置 → 帮助 → 复制诊断数据。给用户原样贴进 issue 用，所以字段固定为英文并包在代码块里。
@@ -115,6 +116,26 @@ export const buildDiagnosticReport = async (): Promise<string> => {
     if (qrLines.length) {
         lines.push('', 'last qq login trace:');
         lines.push(...qrLines.map(line => `  ${line}`));
+    }
+
+    const crashEntries = await readCrashDiagnostics().catch(() => []);
+    lines.push('', 'crash diagnostics:');
+    if (crashEntries.length === 0) {
+        lines.push('  (none)');
+    } else {
+        crashEntries.slice(-5).forEach((entry, index) => {
+            lines.push(
+                `  [${index + 1}] at=${new Date(entry.at).toISOString()}`
+                + ` source=${entry.source}`
+                + ` thread=${entry.thread || 'unknown'}`
+                + ` type=${entry.type}`,
+                `      message=${entry.message || '(empty)'}`,
+            );
+            if (entry.stack) {
+                const stackLines = entry.stack.split(/\r?\n/).slice(0, 8);
+                lines.push(...stackLines.map(line => `      ${line}`));
+            }
+        });
     }
 
     lines.push('```');

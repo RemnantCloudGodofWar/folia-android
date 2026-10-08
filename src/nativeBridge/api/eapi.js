@@ -48,12 +48,59 @@ function encodeCookiePair(key, value) {
   return `${encodeURIComponent(key)}=${encodeURIComponent(safeDecodeCookieValue(value))}`;
 }
 
-export async function buildEapiCookieHeader(cookieHeader) {
+/** eapi 的 deviceId 必须跨请求稳定：每次都换一个，风控会把请求判成「环境异常」（8821）。 */
+const EAPI_DEVICE_ID_KEY = 'neteaseDeviceId';
+
+async function getEapiDeviceId(parsed) {
+  const fromCookie = String(parsed.deviceId || '').trim();
+  if (fromCookie) return fromCookie;
+  try {
+    const stored = await chrome.storage.local.get([EAPI_DEVICE_ID_KEY]);
+    const existing = String(stored?.[EAPI_DEVICE_ID_KEY] || '').trim();
+    if (existing) return existing;
+  } catch (_) {}
+  let created = '';
+  for (let index = 0; index < 16; index += 1) {
+    created += 'abcdefghijklmnopqrstuvwxyz0123456789'.charAt(Math.floor(Math.random() * 36));
+  }
+  try { await chrome.storage.local.set({ [EAPI_DEVICE_ID_KEY]: created }); } catch (_) {}
+  return created;
+}
+
+/**
+ * 官方客户端的 eapi body 里带一个 header 块（deviceId / appver / requestId …）。
+ * 之前只把设备信息塞进 Cookie、body 里没有 header，服务端会按「非官方客户端」判风控，
+ * 登录接口直接回 8821「环境异常」。这里按官方客户端的字段补上。
+ */
+async function buildEapiBodyHeader(parsed) {
+  const header = {
+    osver: parsed.osver || '16.2',
+    deviceId: await getEapiDeviceId(parsed),
+    appver: parsed.appver || '9.0.90',
+    versioncode: parsed.versioncode || '140',
+    mobilename: parsed.mobilename || '',
+    buildver: parsed.buildver || String(Date.now()).slice(0, 10),
+    resolution: parsed.resolution || '1920x1080',
+    __csrf: parsed.__csrf || '',
+    os: parsed.os || 'ios',
+    channel: parsed.channel || 'distribution',
+    requestId: `${Date.now()}_${String(Math.floor(Math.random() * 1000)).padStart(4, '0')}`,
+  };
+  if (parsed.MUSIC_U) header.MUSIC_U = parsed.MUSIC_U;
+  if (parsed.MUSIC_A) header.MUSIC_A = parsed.MUSIC_A;
+  return header;
+}
+
+async function resolveEapiCookieMap(cookieHeader) {
   const parsed = parseCookieString(cookieHeader);
   if (!parsed.MUSIC_U) {
     const musicU = await getNeteaseMusicU();
     if (musicU) parsed.MUSIC_U = musicU;
   }
+  return parsed;
+}
+
+async function formatEapiCookieHeader(parsed) {
   const header = {
     osver: parsed.osver || '16.2',
     os: parsed.os || 'ios',
@@ -70,16 +117,24 @@ export async function buildEapiCookieHeader(cookieHeader) {
     .join('; ');
 }
 
+export async function buildEapiCookieHeader(cookieHeader) {
+  return formatEapiCookieHeader(await resolveEapiCookieMap(cookieHeader));
+}
+
 export async function eapiRequest(path, data, cookieHeader) {
   const uri = path.startsWith('/api/') ? path : `/api/${path.replace(/^\//, '')}`;
   const apiPath = uri.slice(5);
-  const encrypted = eapiEncrypt(uri, data || {});
+  const parsedCookies = await resolveEapiCookieMap(cookieHeader);
+  const requestBody = Object.assign({}, data || {}, {
+    header: await buildEapiBodyHeader(parsedCookies),
+  });
+  const encrypted = eapiEncrypt(uri, requestBody);
   const resp = await fetch(`${EAPI_BASE}/eapi/${apiPath}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
       'User-Agent': EAPI_UA,
-      Cookie: await buildEapiCookieHeader(cookieHeader),
+      Cookie: await formatEapiCookieHeader(parsedCookies),
     },
     body: new URLSearchParams(encrypted).toString(),
     credentials: 'include',

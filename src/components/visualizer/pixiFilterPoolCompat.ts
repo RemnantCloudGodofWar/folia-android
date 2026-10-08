@@ -9,6 +9,7 @@ const PATCHED = Symbol.for('folia.pixi821FilterPoolCompat');
 
 interface FilterSystemCompat {
     _globalFilterBindGroup: BindGroup;
+    _findFilterResolution?: (rootResolution: number) => number;
     init?: () => void;
     destroy: () => void;
     [PATCHED]?: boolean;
@@ -58,6 +59,21 @@ export const installPixiFilterPoolCompat = (pixi: PixiModule) => {
         if (shouldDestroy && textures.length > 0) unbindPassTextures();
         dropTextures.call(this, textures, shouldDestroy);
     };
+
+    // Pooled textures can be returned while FilterSystem still has their source in the
+    // stack. That leaves `inputTexture.source` null for the next resolution lookup; Pixi
+    // then throws every frame until the scene is rebuilt. Falling back to the root
+    // resolution keeps the current frame stable without keeping the destroyed texture alive.
+    const findFilterResolution = prototype._findFilterResolution;
+    if (findFilterResolution) {
+        prototype._findFilterResolution = function (rootResolution) {
+            try {
+                return findFilterResolution.call(this, rootResolution);
+            } catch {
+                return rootResolution;
+            }
+        };
+    }
     // A checked-out texture can outlive its bucket and be destroyed directly on return.
     const returnTexture = pool.returnTexture;
     pool.returnTexture = function (texture, resetStyle) {

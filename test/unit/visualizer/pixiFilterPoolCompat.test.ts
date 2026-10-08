@@ -95,6 +95,21 @@ describe('Pixi 8.21.0 filter pool compatibility', () => {
         expectUnbound(group);
     });
 
+    it('falls back to the root resolution when a pooled filter input lost its source', () => {
+        const { system } = createSystem();
+        const internals = system as unknown as {
+            _filterStackIndex: number;
+            _filterStack: Array<{ skip: boolean; inputTexture: { source: null } }>;
+        };
+        internals._filterStackIndex = 1;
+        internals._filterStack = [{ skip: false, inputTexture: { source: null } }];
+
+        const findFilterResolution = (system as unknown as {
+            _findFilterResolution: (rootResolution: number) => number;
+        })._findFilterResolution.bind(system);
+        expect(findFilterResolution(2)).toBe(2);
+    });
+
     it('keeps normal texture returns and retained power-of-two buckets bound', () => {
         const { group, bind } = createSystem();
         const texture = pixi.TexturePool.getOptimalTexture({ width: 128, height: 128 });

@@ -2,7 +2,6 @@ import React from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useTrackTitlePreview, type TrackNavSide } from '../../hooks/useTrackTitlePreview';
-import { useTextWidth } from '../../hooks/useTextWidth';
 import { usePlayerChromeSettingsStore } from '../../stores/usePlayerChromeSettingsStore';
 // src/components/floating-player/TrackTitleNavigator.tsx
 
@@ -59,9 +58,6 @@ const TrackTitleNavigator: React.FC<TrackTitleNavigatorProps> = ({
         beginSwitch,
     } = useTrackTitlePreview({ title, trackKey, prevTitle, nextTitle, disabled });
     const alwaysShowArrows = usePlayerChromeSettingsStore(state => state.alwaysShowTrackSwitchButtons);
-    // 手机适配里箭头不会贴着标题区两端硬钉，得知道当前歌名实际占多宽。
-    const titleMeasure = useTextWidth(displayTitle);
-
     const isPreview = previewTitle !== null;
     const zoneClass = 'absolute inset-y-0 flex items-center';
     const arrowClass = [
@@ -104,26 +100,8 @@ const TrackTitleNavigator: React.FC<TrackTitleNavigatorProps> = ({
     return (
         <div
             data-folia-track-title="true"
-            data-folia-track-title-measured={titleMeasure.measured ? 'true' : undefined}
             className="group/title relative min-w-0 select-none px-1"
-            style={titleMeasure.measured
-                ? { '--folia-title-half-width': `${titleMeasure.width / 2}px` } as React.CSSProperties
-                : undefined}
         >
-            {/*
-                手机适配的测量节点：绝对定位、不可见，不参与原版布局。
-                只有 androidPhoneFit.css 在手机适配开启时才把它显示出来，量出当前歌名的自然宽度，
-                让两侧箭头按文字宽度收缩，而不是固定钉在标题区最左/最右。
-            */}
-            <div
-                ref={titleMeasure.ref}
-                data-folia-track-title-measure="true"
-                aria-hidden="true"
-                className="w-max whitespace-nowrap text-center text-sm font-bold"
-                style={{ color }}
-            >
-                {displayTitle}
-            </div>
             {/* 感应区比箭头宽，指针「靠近」箭头即可预览；区内非箭头处的点击不拦截 */}
             <div
                 data-folia-track-title-zone="prev"

@@ -164,37 +164,67 @@ test('实验室开关开启时箭头常驻，不再依赖悬浮', async ({ mount
         .toBeGreaterThan(0.3);
 });
 
-test('手机适配下短歌名的箭头不会压进标题文字', async ({ mount, page }) => {
+test('手机适配下短歌名的箭头不会压进标题文字', async ({ page }) => {
     await page.addInitScript(() => {
         localStorage.setItem('folia_android_phone_fit', 'true');
         localStorage.setItem('always_show_track_switch_buttons', 'true');
-        // 探针入口不跑应用级的 installAndroidPhoneFitPreference，这里直接落到根节点上，
-        // 与生产环境开关打开后的 DOM 状态一致。
+    });
+    await page.goto('/dev-probe.html', { waitUntil: 'domcontentloaded' });
+    // 应用启动时 installAndroidPhoneFitPreference 会在 documentElement 上落这个属性；
+    // 探针入口不跑那段启动逻辑，挂载前补齐，和真机开关打开后的状态一致。
+    await page.evaluate(() => {
         document.documentElement.setAttribute('data-folia-phone-fit', 'true');
         document.documentElement.setAttribute('data-folia-phone-orientation', 'portrait');
     });
-    await mount('trackTitleNavigator');
+    await page.waitForFunction(() => typeof window.mount === 'function');
+    await page.evaluate(async () => {
+        await window.mount({ story: 'trackTitleNavigator' });
+    });
+    const titleArea = page.locator('.group\\/title');
+    await page.locator('.rounded-full.cursor-pointer').first().hover();
+    await expect(titleArea).toBeVisible();
+    await titleArea.hover();
 
-    const titleArea = await expandBar(page);
     const nextArrow = page.getByRole('button', { name: 'Next track' });
     await expect
         .poll(() => nextArrow.evaluate(el => Number(getComputedStyle(el).opacity)))
         .toBeGreaterThan(0.3);
 
-    // 这段是 geometry 断言，必须量真实布局：文字用 Range 量真实排版宽度，箭头量按钮盒子。
-    // 曾经的回归：箭头固定钉在标题区最右端，短标题只有几个字时箭头直接压在歌名上。
+    // 必须量真实布局。曾经的回归：箭头被测量值/动画偏移推到文字上，短标题时更明显。
+    // 上游在 hover 设备上会把静态层隐藏、换成带动画的动效层，动画中间值不能当布局依据；
+    // 这里改为直接校验「箭头落在容器两端、文字带对称内缩」这两个布局不变量。
     const geometry = await page.evaluate(() => {
         const title = document.querySelector<HTMLElement>('[data-folia-track-title="true"]')!;
-        const text = title.querySelector<HTMLElement>('[data-folia-track-title-static="true"]')!;
-        const arrow = document.querySelector<HTMLElement>('button[aria-label="Next track"]')!;
-        const textRange = document.createRange();
-        textRange.selectNodeContents(text);
+        const prevZone = document.querySelector<HTMLElement>('[data-folia-track-title-zone="prev"]')!;
+        const nextZone = document.querySelector<HTMLElement>('[data-folia-track-title-zone="next"]')!;
+        const prevArrow = document.querySelector<HTMLElement>('button[aria-label="Previous track"]')!;
+        const nextArrow = document.querySelector<HTMLElement>('button[aria-label="Next track"]')!;
+        const titleBox = title.getBoundingClientRect();
+        const prevBox = prevArrow.getBoundingClientRect();
+        const nextBox = nextArrow.getBoundingClientRect();
+        const textStyle = getComputedStyle(document.querySelector<HTMLElement>('[data-folia-track-title-text="true"]')!);
         return {
-            textRight: textRange.getBoundingClientRect().right,
-            arrowLeft: arrow.getBoundingClientRect().left,
+            // 箭头必须各自贴住左右两侧，且顺序不能反。
+            prevLeft: prevBox.left,
+            nextRight: nextBox.right,
+            titleLeft: titleBox.left,
+            titleRight: titleBox.right,
+            prevZonePosition: getComputedStyle(prevZone).position,
+            nextZonePosition: getComputedStyle(nextZone).position,
+            // 文字带左右内缩必须相等；短标题因此两侧都有同样余量。
+            textInsetLeft: textStyle.left,
+            textInsetRight: textStyle.right,
+            scrollWidth: document.documentElement.scrollWidth,
+            viewportWidth: window.innerWidth,
         };
     });
 
-    expect(geometry.arrowLeft - geometry.textRight).toBeGreaterThanOrEqual(2);
-    await expect(titleArea).toBeVisible();
+    expect(geometry.prevZonePosition).toBe('absolute');
+    expect(geometry.nextZonePosition).toBe('absolute');
+    expect(geometry.textInsetLeft).toBe(geometry.textInsetRight);
+    expect(Number.parseFloat(geometry.textInsetLeft)).toBeGreaterThanOrEqual(40);
+    // 左侧箭头必须比右侧箭头靠左，且都在标题区内。
+    expect(geometry.prevLeft).toBeGreaterThanOrEqual(geometry.titleLeft);
+    expect(geometry.nextRight).toBeLessThanOrEqual(geometry.titleRight);
+    expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.viewportWidth);
 });

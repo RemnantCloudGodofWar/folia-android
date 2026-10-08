@@ -229,11 +229,10 @@ html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [dat
    leaves no room for the title itself on touch layouts, so shrink the zones and keep the text
    layer at a fixed one-line height.
 
-   箭头的左右位置由 --folia-title-arrow-inset 决定：短标题时它等于「歌名宽度的一半 + 8px」，
-   箭头刚好贴在文字外侧留 4px；长标题由 min() 封在 50% 以内，回到容器原来的两侧位置。
-   变量默认 28px，只有测量节点拿到宽度后才被覆盖。 */
+   箭头固定钉在两侧，歌名限制在左右各 40px 的中间带内居中。两侧内缩完全对称，
+   所以短标题与箭头之间始终有余量，长标题也只会在这个中间带里截断，不会压到箭头。
+   这个方案不测量文字宽度，也不受切歌动画或字体加载时序影响。 */
 html[data-folia-phone-fit='true'] [data-folia-track-title='true'] {
-  --folia-title-arrow-inset: min(50%, 28px);
   direction: ltr;
   width: 100%;
   min-height: 16px;
@@ -241,47 +240,32 @@ html[data-folia-phone-fit='true'] [data-folia-track-title='true'] {
   padding-right: 0 !important;
 }
 
-html[data-folia-phone-fit='true'] [data-folia-track-title='true'][data-folia-track-title-measured='true'] {
-  --folia-title-arrow-inset: min(50%, calc(var(--folia-title-half-width) + 8px));
-}
-
-/* 让文字层铺满测量基准宽度；竖屏原本的 flex: 1 1 auto 会让测量基准变成内容宽度。 */
+/* 歌名占中间带，左右对称内缩；箭头仍是上游原有的绝对定位，只是钉在两侧。 */
 html[data-folia-phone-fit='true'] [data-folia-track-title-layer='true'] {
+  position: relative;
   width: 100% !important;
-}
-
-html[data-folia-phone-fit='true'] [data-folia-track-title-measure='true'] {
-  position: fixed;
-  top: 0;
-  left: -10000px;
-  width: max-content;
-  max-width: none;
-  display: block !important;
-  visibility: hidden;
-  pointer-events: none;
-  font-size: 12px !important;
-  line-height: 1.1 !important;
+  height: 100% !important;
 }
 
 html[data-folia-phone-fit='true'] [data-folia-track-title-zone='prev'] {
-  left: var(--folia-title-arrow-inset) !important;
+  left: 8px !important;
   right: auto !important;
   justify-content: flex-start !important;
   z-index: 2;
-  width: 20px !important;
+  width: 28px !important;
 }
 
 html[data-folia-phone-fit='true'] [data-folia-track-title-zone='next'] {
   left: auto !important;
-  right: var(--folia-title-arrow-inset) !important;
+  right: 8px !important;
   justify-content: flex-end !important;
   z-index: 2;
-  width: 20px !important;
+  width: 28px !important;
 }
 
 html[data-folia-phone-fit='true'] [data-folia-track-title-text='true'] {
-  left: var(--folia-title-arrow-inset) !important;
-  right: var(--folia-title-arrow-inset) !important;
+  left: 40px !important;
+  right: 40px !important;
   z-index: 1;
   min-height: 16px;
 }
@@ -297,6 +281,9 @@ html[data-folia-phone-fit='true'] [data-folia-track-title-arrow='true'] svg {
 }
 
 html[data-folia-phone-fit='true'] [data-folia-track-title-text='true'] span {
+  display: inline-block;
+  width: auto;
+  max-width: 100%;
   font-size: 12px !important;
   line-height: 1.1 !important;
 }
@@ -386,7 +373,7 @@ html[data-folia-phone-fit='true'] [data-folia-track-title-static='true'] {
   display: block !important;
   width: 100%;
   min-width: 0;
-  padding-inline: var(--folia-title-arrow-inset);
+  padding-inline: var(--folia-title-text-inset);
   box-sizing: border-box;
   font-size: 12px !important;
   line-height: 32px !important;

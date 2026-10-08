@@ -2,6 +2,7 @@ import React from 'react';
 import { flushSync } from 'react-dom';
 import { createRoot, type Root } from 'react-dom/client';
 import '../../src/index.css';
+import '../../src/styles/androidPhoneFit.css';
 import type { ProbeDefinition } from './definition';
 import { PROBES, PROBE_LIST } from './registry';
 // dev/probes/main.tsx

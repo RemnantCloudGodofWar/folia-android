@@ -263,7 +263,7 @@ html[data-folia-phone-fit='true'] [data-folia-track-title-text='true'] span {
    rows (~130px tall), which overlaps the upcoming-track panel. Collapse it to the same two-row
    grid used by desktop while keeping phone-sized controls. */
 html[data-folia-phone-fit='true'][data-folia-phone-orientation='portrait'] [data-ponder='player-bar'] {
-  max-height: 74px;
+  max-height: 88px;
   padding: 6px 10px !important;
 }
 
@@ -274,41 +274,45 @@ html[data-folia-phone-fit='true'][data-folia-phone-orientation='portrait'] [data
 
 html[data-folia-phone-fit='true'][data-folia-phone-orientation='portrait'] [data-folia-player-bar-expanded='true'] > div {
   grid-template-columns: auto minmax(0, 1fr) auto !important;
-  grid-template-rows: auto auto !important;
+  grid-template-rows: auto auto auto !important;
   column-gap: 8px !important;
   row-gap: 2px !important;
 }
 
 html[data-folia-phone-fit='true'][data-folia-phone-orientation='portrait'] [data-folia-player-bar-title='true'] {
-  grid-column: 2 !important;
+  grid-column: 1 / -1 !important;
   grid-row: 1 !important;
   padding-inline: 0 !important;
-  font-size: 14px !important;
+  min-height: 20px;
+  font-size: 15px !important;
   line-height: 1.15 !important;
+  text-align: center;
 }
 
 html[data-folia-phone-fit='true'][data-folia-phone-orientation='portrait'] [data-folia-player-bar-play='true'] {
   grid-column: 1 !important;
-  grid-row: 1 !important;
-  width: 40px !important;
-  height: 40px !important;
+  grid-row: 2 !important;
+  width: 34px !important;
+  height: 34px !important;
 }
 
 html[data-folia-phone-fit='true'][data-folia-phone-orientation='portrait'] [data-folia-player-bar-play='true'] svg {
-  width: 17px;
-  height: 17px;
+  width: 15px;
+  height: 15px;
 }
 
 html[data-folia-phone-fit='true'][data-folia-phone-orientation='portrait'] [data-ponder-slots] {
   display: flex !important;
   grid-column: 3 !important;
-  grid-row: 1 !important;
+  grid-row: 2 !important;
   align-items: center;
+  justify-content: flex-end;
+  justify-self: end;
   gap: 2px;
 }
 
 html[data-folia-phone-fit='true'][data-folia-phone-orientation='portrait'] [data-folia-player-bar-slot='true'] {
-  padding: 4px !important;
+  padding: 3px !important;
 }
 
 html[data-folia-phone-fit='true'][data-folia-phone-orientation='portrait'] [data-folia-player-bar-slot='true'] svg {
@@ -318,12 +322,12 @@ html[data-folia-phone-fit='true'][data-folia-phone-orientation='portrait'] [data
 
 html[data-folia-phone-fit='true'][data-folia-phone-orientation='portrait'] [data-folia-player-bar-progress='true'] {
   grid-column: 1 / -1 !important;
-  grid-row: 2 !important;
+  grid-row: 3 !important;
   padding-inline: 0 !important;
 }
 
 html[data-folia-phone-fit='true'][data-folia-phone-orientation='portrait'] [data-folia-track-title-text='true'] span {
-  font-size: 14px !important;
+  font-size: 15px !important;
 }
 
 /* The right-side panel/gear toggle shares the bar's baseline; on a portrait phone it lands on top

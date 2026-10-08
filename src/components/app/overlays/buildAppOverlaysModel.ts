@@ -52,6 +52,8 @@ type AppOverlaysAmbient = {
     lyrics: LyricData | null;
     activePlaybackContext: 'main' | 'stage';
     isPlayerChromeHidden: boolean;
+    /** 全沉浸模式在播放视图下强制收起播放界面控件；浏览歌单/歌曲的界面不受影响。 */
+    immersivePlayerChromeHidden: boolean;
     noTrackText: string;
     playQueue: SongResult[];
     isFmMode: boolean;
@@ -160,6 +162,7 @@ export const buildAppOverlaysModel = ({
     navigateToPlayer,
     navigateFromPlayerCapsule,
     isPlayerChromeHidden,
+    immersivePlayerChromeHidden,
     shouldHidePlayerProgressBar,
     onSeekMainAudio,
     onStagePlayerSeek,
@@ -189,7 +192,7 @@ export const buildAppOverlaysModel = ({
     // Gated on stageTrackPillOnScreen (computed in App: display mode plus which page allows the
     // card) rather than on the view directly, so the countdown that feeds the "up next" preview
     // and the card that shows it can never disagree about where the card lives.
-    nowPlayingToast: stageTrackPillOnScreen && currentSong
+    nowPlayingToast: stageTrackPillOnScreen && currentSong && !immersivePlayerChromeHidden
         ? {
             song: {
                 title: currentSong.name || '',

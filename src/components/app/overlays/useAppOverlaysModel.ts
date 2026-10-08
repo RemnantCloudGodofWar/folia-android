@@ -6,6 +6,7 @@ import { useSearchNavigationStore } from '../../../stores/useSearchNavigationSto
 import { useThemeSettingsStore } from '../../../stores/useThemeSettingsStore';
 import { useStageSettingsStore } from '../../../stores/useStageSettingsStore';
 import { usePlayerChromeSettingsStore } from '../../../stores/usePlayerChromeSettingsStore';
+import { useAndroidLayoutSettingsStore } from '../../../stores/useAndroidLayoutSettingsStore';
 import { useTranslation } from 'react-i18next';
 import {
     selectDisplayCoverUrl,
@@ -34,6 +35,7 @@ export const useAppOverlaysModel = (deps: AppOverlaysDeps): AppOverlaysModel => 
     const { t } = useTranslation();
     const currentView = useAppViewStore(state => state.view);
     const isPlayerChromeHidden = useAppChromeStore(state => state.isPlayerChromeHidden);
+    const immersiveModeEnabled = useAndroidLayoutSettingsStore(state => state.immersiveModeEnabled);
     const isDevDebugOverlayVisible = useAppChromeStore(state => state.isDevDebugOverlayVisible);
     const isMemoryMonitorVisible = useAppChromeStore(state => state.isMemoryMonitorVisible);
     const isSearchOpen = useSearchNavigationStore(state => state.isSearchOpen);
@@ -79,6 +81,11 @@ export const useAppOverlaysModel = (deps: AppOverlaysDeps): AppOverlaysModel => 
         playQueue.length,
     ]);
 
+    // 全沉浸模式只在播放视图生效：强制收起控制条、命令面板按钮与右侧齿轮/面板按钮。
+    // 歌单、歌曲浏览等界面保持原样，不会因为全沉浸而少掉浏览控件。
+    const immersivePlayerChromeHidden = immersiveModeEnabled && currentView === 'player';
+    const effectivePlayerChromeHidden = isPlayerChromeHidden || immersivePlayerChromeHidden;
+
     return useMemo(() => buildAppOverlaysModel({
         ...deps,
         currentView,
@@ -95,7 +102,8 @@ export const useAppOverlaysModel = (deps: AppOverlaysDeps): AppOverlaysModel => 
         audioSrc,
         lyrics: displayLyrics,
         activePlaybackContext,
-        isPlayerChromeHidden,
+        isPlayerChromeHidden: effectivePlayerChromeHidden,
+        immersivePlayerChromeHidden,
         playQueue,
         isFmMode,
         coverUrl: displayCoverUrl,
@@ -128,7 +136,8 @@ export const useAppOverlaysModel = (deps: AppOverlaysDeps): AppOverlaysModel => 
         audioSrc,
         displayLyrics,
         activePlaybackContext,
-        isPlayerChromeHidden,
+        effectivePlayerChromeHidden,
+        immersivePlayerChromeHidden,
         playQueue,
         isFmMode,
         displayCoverUrl,

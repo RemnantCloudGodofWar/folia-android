@@ -1543,6 +1543,8 @@ export default {
     "homeTabsVisibilityDesc": "Customize the capsule entries shown at the top of the home page",
   "bottomUiSettings": "Bottom Controls",
   "adaptiveDisplay": "Adaptive screen resolution",
+  "immersiveMode": "Full immersive mode",
+  "immersiveModeDesc": "Applies to the player view only: it auto-hides the control bar, the up-next card, the command palette button, and the right-side gear/panel button for a cleaner stage. Playlist and song browsing screens are unaffected. Turning it off restores the command palette button; if Auto hide was already on, it keeps hiding automatically.",
   "phoneFit": "Phone layout fit",
   "orientationFit": "Portrait / landscape fit",
   "commandPaletteButtonSection": "Command palette button",

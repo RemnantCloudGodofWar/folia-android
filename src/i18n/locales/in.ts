@@ -1536,6 +1536,8 @@ export default {
     "homeTabsVisibilityDesc": "Sesuaikan entri capsule yang ditampilkan di bagian atas halaman beranda",
  "bottomUiSettings": "Kontrol Bawah",
  "adaptiveDisplay": "Resolusi layar adaptif",
+ "immersiveMode": "Mode imersif penuh",
+ "immersiveModeDesc": "Hanya berlaku di tampilan pemutar: bilah kontrol, kartu lagu berikutnya, tombol palette perintah, dan tombol gerigi/panel kanan disembunyikan otomatis agar panggung lebih bersih. Layar jelajah playlist dan lagu tidak terpengaruh. Saat dimatikan, tombol palette perintah tampil kembali; jika Sembunyikan otomatis sudah aktif, tombol tetap tersembunyi otomatis.",
  "phoneFit": "Tata letak ponsel",
  "orientationFit": "Kompatibilitas potret / lanskap",
  "commandPaletteButtonSection": "Tombol palette perintah",

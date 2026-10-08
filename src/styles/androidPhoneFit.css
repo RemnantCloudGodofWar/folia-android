@@ -229,18 +229,32 @@ html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [dat
    leaves no room for the title itself on touch layouts, so shrink the zones and keep the text
    layer at a fixed one-line height. */
 html[data-folia-phone-fit='true'] [data-folia-track-title='true'] {
+  direction: ltr;
   width: 100%;
   min-height: 16px;
   padding-inline: 0 !important;
 }
 
-html[data-folia-phone-fit='true'] [data-folia-track-title-zone] {
+html[data-folia-phone-fit='true'] [data-folia-track-title-zone='prev'] {
+  left: 0 !important;
+  right: auto !important;
+  justify-content: flex-start !important;
+  z-index: 2;
+  width: 20px !important;
+}
+
+html[data-folia-phone-fit='true'] [data-folia-track-title-zone='next'] {
+  left: auto !important;
+  right: 0 !important;
+  justify-content: flex-end !important;
+  z-index: 2;
   width: 20px !important;
 }
 
 html[data-folia-phone-fit='true'] [data-folia-track-title-text='true'] {
   left: 20px !important;
   right: 20px !important;
+  z-index: 1;
   min-height: 16px;
 }
 

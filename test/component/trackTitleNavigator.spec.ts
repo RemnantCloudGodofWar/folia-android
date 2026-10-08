@@ -163,3 +163,38 @@ test('实验室开关开启时箭头常驻，不再依赖悬浮', async ({ mount
         .poll(() => nextArrow.evaluate(el => Number(getComputedStyle(el).opacity)))
         .toBeGreaterThan(0.3);
 });
+
+test('手机适配下短歌名的箭头不会压进标题文字', async ({ mount, page }) => {
+    await page.addInitScript(() => {
+        localStorage.setItem('folia_android_phone_fit', 'true');
+        localStorage.setItem('always_show_track_switch_buttons', 'true');
+        // 探针入口不跑应用级的 installAndroidPhoneFitPreference，这里直接落到根节点上，
+        // 与生产环境开关打开后的 DOM 状态一致。
+        document.documentElement.setAttribute('data-folia-phone-fit', 'true');
+        document.documentElement.setAttribute('data-folia-phone-orientation', 'portrait');
+    });
+    await mount('trackTitleNavigator');
+
+    const titleArea = await expandBar(page);
+    const nextArrow = page.getByRole('button', { name: 'Next track' });
+    await expect
+        .poll(() => nextArrow.evaluate(el => Number(getComputedStyle(el).opacity)))
+        .toBeGreaterThan(0.3);
+
+    // 这段是 geometry 断言，必须量真实布局：文字用 Range 量真实排版宽度，箭头量按钮盒子。
+    // 曾经的回归：箭头固定钉在标题区最右端，短标题只有几个字时箭头直接压在歌名上。
+    const geometry = await page.evaluate(() => {
+        const title = document.querySelector<HTMLElement>('[data-folia-track-title="true"]')!;
+        const text = title.querySelector<HTMLElement>('[data-folia-track-title-static="true"]')!;
+        const arrow = document.querySelector<HTMLElement>('button[aria-label="Next track"]')!;
+        const textRange = document.createRange();
+        textRange.selectNodeContents(text);
+        return {
+            textRight: textRange.getBoundingClientRect().right,
+            arrowLeft: arrow.getBoundingClientRect().left,
+        };
+    });
+
+    expect(geometry.arrowLeft - geometry.textRight).toBeGreaterThanOrEqual(2);
+    await expect(titleArea).toBeVisible();
+});

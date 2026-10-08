@@ -7,6 +7,8 @@ import { useThemeSettingsStore } from '../../../stores/useThemeSettingsStore';
 import { useStageSettingsStore } from '../../../stores/useStageSettingsStore';
 import { usePlayerChromeSettingsStore } from '../../../stores/usePlayerChromeSettingsStore';
 import { useAndroidLayoutSettingsStore } from '../../../stores/useAndroidLayoutSettingsStore';
+import { useImmersiveChromeStore } from '../../../stores/useImmersiveChromeStore';
+import { useImmersiveChromeReveal } from '../../../hooks/useImmersiveChromeReveal';
 import { useTranslation } from 'react-i18next';
 import {
     selectDisplayCoverUrl,
@@ -36,6 +38,8 @@ export const useAppOverlaysModel = (deps: AppOverlaysDeps): AppOverlaysModel => 
     const currentView = useAppViewStore(state => state.view);
     const isPlayerChromeHidden = useAppChromeStore(state => state.isPlayerChromeHidden);
     const immersiveModeEnabled = useAndroidLayoutSettingsStore(state => state.immersiveModeEnabled);
+    const autoHidePlayerChrome = usePlayerChromeSettingsStore(state => state.autoHidePlayerChrome);
+    const immersiveChromeHidden = useImmersiveChromeStore(state => state.immersiveChromeHidden);
     const isDevDebugOverlayVisible = useAppChromeStore(state => state.isDevDebugOverlayVisible);
     const isMemoryMonitorVisible = useAppChromeStore(state => state.isMemoryMonitorVisible);
     const isSearchOpen = useSearchNavigationStore(state => state.isSearchOpen);
@@ -81,9 +85,19 @@ export const useAppOverlaysModel = (deps: AppOverlaysDeps): AppOverlaysModel => 
         playQueue.length,
     ]);
 
+    // 全沉浸的触摸唤回节奏：进入播放界面收起，触摸屏幕后显示，静止 3 秒再收起。
+    // 原有自动隐藏开着时由它自行接管唤回，本钩子只负责“进入先收起”。
+    useImmersiveChromeReveal({
+        immersiveEnabled: immersiveModeEnabled,
+        isPlayerView: currentView === 'player',
+        autoHidePlayerChrome,
+    });
+
     // 全沉浸模式只在播放视图生效：强制收起控制条、命令面板按钮与右侧齿轮/面板按钮。
     // 歌单、歌曲浏览等界面保持原样，不会因为全沉浸而少掉浏览控件。
-    const immersivePlayerChromeHidden = immersiveModeEnabled && currentView === 'player';
+    const immersivePlayerChromeHidden = immersiveModeEnabled
+        && currentView === 'player'
+        && immersiveChromeHidden;
     const effectivePlayerChromeHidden = isPlayerChromeHidden || immersivePlayerChromeHidden;
 
     return useMemo(() => buildAppOverlaysModel({
@@ -136,6 +150,8 @@ export const useAppOverlaysModel = (deps: AppOverlaysDeps): AppOverlaysModel => 
         audioSrc,
         displayLyrics,
         activePlaybackContext,
+        autoHidePlayerChrome,
+        immersiveChromeHidden,
         effectivePlayerChromeHidden,
         immersivePlayerChromeHidden,
         playQueue,

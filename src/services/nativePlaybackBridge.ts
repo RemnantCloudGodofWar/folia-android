@@ -27,10 +27,12 @@ const pushState = (plugin: NativePlaybackPlugin) => {
   }
   const playerState = selectDisplayPlayerState(state);
   const playing = playerState === PlayerState.PLAYING;
+  const coverUrl = song.album?.coverUrl || (song as any).coverUrl || '';
   void plugin.updatePlaybackState({
     title: song.name || 'Unknown Song',
     artist: song.artists?.map((artist) => artist.name).filter(Boolean).join(' / ') || '',
     album: song.album?.name || '',
+    coverUrl,
     playing,
     position: Math.max(0, Math.round(currentTime.get() * 1000)),
     duration: Math.max(0, Math.round(selectDisplayDuration(state) * 1000)),

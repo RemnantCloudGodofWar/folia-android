@@ -5,19 +5,40 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.content.Intent;
 import android.media.MediaMetadata;
 import android.media.session.MediaSession;
 import android.media.session.PlaybackState;
 import android.os.Build;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 
 import androidx.annotation.Nullable;
+
+import java.io.InputStream;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
+import okhttp3.ResponseBody;
 
 public class FoliaPlaybackService extends Service {
     private static final String CHANNEL_ID = "folia_playback";
     private static final int NOTIFICATION_ID = 31009;
     private MediaSession mediaSession;
+    private final ExecutorService artworkExecutor = Executors.newSingleThreadExecutor();
+    private final OkHttpClient artworkClient = new OkHttpClient();
+    private final Map<String, Bitmap> artworkCache = new ConcurrentHashMap<>();
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private volatile String currentArtworkUrl = "";
+    private volatile String appliedArtworkUrl = "";
 
     @Override
     public void onCreate() {
@@ -44,16 +65,13 @@ public class FoliaPlaybackService extends Service {
         String title = intent.getStringExtra("title");
         String artist = intent.getStringExtra("artist");
         String album = intent.getStringExtra("album");
+        String coverUrl = intent.getStringExtra("coverUrl");
         boolean playing = intent.getBooleanExtra("playing", false);
         long position = intent.getLongExtra("position", 0);
         long duration = intent.getLongExtra("duration", 0);
+        currentArtworkUrl = coverUrl == null ? "" : coverUrl.trim();
 
-        MediaMetadata.Builder metadata = new MediaMetadata.Builder()
-            .putString(MediaMetadata.METADATA_KEY_TITLE, title == null ? "Folia" : title)
-            .putString(MediaMetadata.METADATA_KEY_ARTIST, artist == null ? "" : artist)
-            .putString(MediaMetadata.METADATA_KEY_ALBUM, album == null ? "" : album)
-            .putLong(MediaMetadata.METADATA_KEY_DURATION, duration);
-        mediaSession.setMetadata(metadata.build());
+        mediaSession.setMetadata(buildMetadata(title, artist, album, duration, null));
         mediaSession.setPlaybackState(new PlaybackState.Builder()
             .setActions(
                 PlaybackState.ACTION_PLAY
@@ -66,12 +84,44 @@ public class FoliaPlaybackService extends Service {
             .setState(playing ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED, position, playing ? 1f : 0f)
             .build());
 
-        Notification notification = buildNotification(title, artist, playing);
+        Notification notification = buildNotification(title, artist, playing, null);
         startForeground(NOTIFICATION_ID, notification);
+        loadArtwork(currentArtworkUrl, bitmap -> {
+            if (!currentArtworkUrl.equals(coverUrl == null ? "" : coverUrl.trim())) return;
+            mediaSession.setMetadata(buildMetadata(title, artist, album, duration, bitmap));
+            NotificationManager manager = getSystemService(NotificationManager.class);
+            if (manager != null) {
+                manager.notify(NOTIFICATION_ID, buildNotification(title, artist, playing, bitmap));
+            }
+        });
         return START_STICKY;
     }
 
-    private Notification buildNotification(String title, String artist, boolean playing) {
+    private MediaMetadata buildMetadata(
+        String title,
+        String artist,
+        String album,
+        long duration,
+        Bitmap artwork
+    ) {
+        MediaMetadata.Builder metadata = new MediaMetadata.Builder()
+            .putString(MediaMetadata.METADATA_KEY_TITLE, title == null ? "Folia" : title)
+            .putString(MediaMetadata.METADATA_KEY_ARTIST, artist == null ? "" : artist)
+            .putString(MediaMetadata.METADATA_KEY_ALBUM, album == null ? "" : album)
+            .putLong(MediaMetadata.METADATA_KEY_DURATION, duration);
+        if (artwork != null) {
+            metadata.putBitmap(MediaMetadata.METADATA_KEY_ART, artwork);
+            metadata.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, artwork);
+        }
+        return metadata.build();
+    }
+
+    private Notification buildNotification(
+        String title,
+        String artist,
+        boolean playing,
+        Bitmap artwork
+    ) {
         Intent activityIntent = new Intent(this, MainActivity.class);
         PendingIntent contentIntent = PendingIntent.getActivity(
             this,
@@ -112,7 +162,48 @@ public class FoliaPlaybackService extends Service {
             .setStyle(new Notification.MediaStyle()
                 .setMediaSession(mediaSession.getSessionToken())
                 .setShowActionsInCompactView(0, 1, 2));
+        if (artwork != null) builder.setLargeIcon(artwork);
         return builder.build();
+    }
+
+    private void loadArtwork(String value, ArtworkCallback callback) {
+        if (value == null || value.isEmpty()) return;
+        if (value.equals(appliedArtworkUrl)) return;
+        Bitmap cached = artworkCache.get(value);
+        if (cached != null) {
+            mainHandler.post(() -> {
+                if (value.equals(currentArtworkUrl)) appliedArtworkUrl = value;
+                callback.onLoaded(cached);
+            });
+            return;
+        }
+        if (!(value.startsWith("http://") || value.startsWith("https://"))) return;
+        artworkExecutor.execute(() -> {
+            Bitmap bitmap = null;
+            try (Response response = artworkClient.newCall(new Request.Builder()
+                .url(value)
+                .header("User-Agent", "Mozilla/5.0 (Linux; Android 13; Mobile)")
+                .build()).execute()) {
+                ResponseBody body = response.body();
+                if (response.isSuccessful() && body != null) {
+                    try (InputStream input = body.byteStream()) {
+                        bitmap = BitmapFactory.decodeStream(input);
+                    }
+                }
+            } catch (Exception ignored) {}
+            if (bitmap != null) artworkCache.put(value, bitmap);
+            Bitmap resolved = bitmap;
+            if (resolved != null) {
+                mainHandler.post(() -> {
+                    if (value.equals(currentArtworkUrl)) appliedArtworkUrl = value;
+                    callback.onLoaded(resolved);
+                });
+            }
+        });
+    }
+
+    private interface ArtworkCallback {
+        void onLoaded(Bitmap bitmap);
     }
 
     private void createNotificationChannel() {
@@ -133,6 +224,7 @@ public class FoliaPlaybackService extends Service {
 
     @Override
     public void onDestroy() {
+        artworkExecutor.shutdownNow();
         if (mediaSession != null) {
             mediaSession.setActive(false);
             mediaSession.release();

@@ -187,32 +187,32 @@ html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [dat
 /* The landscape phone viewport is wide and short; the desktop-sized expanded capsule reads as
    an oversized bar. Keep it comfortably centered and leave the collapsed pill untouched. */
 html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-folia-player-bar-expanded='true'] {
-  width: min(82vw, 28rem) !important;
-  max-width: min(82vw, 28rem) !important;
+  width: min(78vw, 26rem) !important;
+  max-width: min(78vw, 26rem) !important;
 }
 
 html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-folia-player-bar-expanded='true'] > div {
-  column-gap: 8px !important;
+  column-gap: 6px !important;
   row-gap: 2px !important;
 }
 
 html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-folia-player-bar-play='true'] {
-  width: 36px !important;
-  height: 36px !important;
+  width: 34px !important;
+  height: 34px !important;
 }
 
 html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-folia-player-bar-play='true'] svg {
-  width: 16px;
-  height: 16px;
+  width: 15px;
+  height: 15px;
 }
 
 html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-folia-player-bar-slot='true'] {
-  padding: 4px !important;
+  padding: 3px !important;
 }
 
 html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-folia-player-bar-slot='true'] svg {
-  width: 16px !important;
-  height: 16px !important;
+  width: 15px !important;
+  height: 15px !important;
 }
 
 html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-folia-player-bar-title='true'] {
@@ -223,6 +223,40 @@ html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [dat
 
 html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-folia-player-bar-progress='true'] {
   padding-inline: 0 !important;
+}
+
+/* The title navigator reserves 56px on each side for its hover arrows. In the phone bar that
+   leaves no room for the title itself on touch layouts, so shrink the zones and keep the text
+   layer at a fixed one-line height. */
+html[data-folia-phone-fit='true'] [data-folia-track-title='true'] {
+  width: 100%;
+  min-height: 16px;
+  padding-inline: 0 !important;
+}
+
+html[data-folia-phone-fit='true'] [data-folia-track-title-zone] {
+  width: 20px !important;
+}
+
+html[data-folia-phone-fit='true'] [data-folia-track-title-text='true'] {
+  left: 20px !important;
+  right: 20px !important;
+  min-height: 16px;
+}
+
+html[data-folia-phone-fit='true'] [data-folia-track-title-arrow='true'] {
+  width: 20px !important;
+  height: 20px !important;
+}
+
+html[data-folia-phone-fit='true'] [data-folia-track-title-arrow='true'] svg {
+  width: 13px;
+  height: 13px;
+}
+
+html[data-folia-phone-fit='true'] [data-folia-track-title-text='true'] span {
+  font-size: 12px !important;
+  line-height: 1.1 !important;
 }
 
 /* Portrait phone fit: the default sub-sm layout stacks title, transport and progress into three
@@ -307,6 +341,22 @@ html[data-folia-phone-fit='true'] [data-folia-audio-effects] {
 
 html[data-folia-phone-fit='true'] [data-folia-audio-effects] .grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-folia-themed-dialog-kind='playlist-selection'] {
+  width: min(72vw, 30rem) !important;
+  max-width: min(72vw, 30rem) !important;
+  max-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 16px) !important;
+  padding: 12px !important;
+}
+
+html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-folia-playlist-list='true'] {
+  max-height: min(42dvh, 220px);
+}
+
+html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-folia-playlist-option='true'] {
+  padding: 8px 12px !important;
+  border-radius: 12px !important;
 }
 
 @media (max-width: 600px) {

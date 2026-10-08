@@ -81,6 +81,7 @@ const TrackTitleNavigator: React.FC<TrackTitleNavigatorProps> = ({
         return (
             <button
                 type="button"
+                data-folia-track-title-arrow={side}
                 aria-label={label}
                 title={target || label}
                 className={arrowClass}
@@ -98,9 +99,10 @@ const TrackTitleNavigator: React.FC<TrackTitleNavigatorProps> = ({
     };
 
     return (
-        <div className="group/title relative min-w-0 select-none px-1">
+        <div data-folia-track-title="true" className="group/title relative min-w-0 select-none px-1">
             {/* 感应区比箭头宽，指针「靠近」箭头即可预览；区内非箭头处的点击不拦截 */}
             <div
+                data-folia-track-title-zone="prev"
                 className={`${zoneClass} left-0 w-14 justify-start pl-1`}
                 onMouseEnter={() => enterZone('prev')}
                 onMouseLeave={leaveZone}
@@ -108,6 +110,7 @@ const TrackTitleNavigator: React.FC<TrackTitleNavigatorProps> = ({
                 {renderArrow('prev')}
             </div>
             <div
+                data-folia-track-title-zone="next"
                 className={`${zoneClass} right-0 w-14 justify-end pr-1`}
                 onMouseEnter={() => enterZone('next')}
                 onMouseLeave={leaveZone}
@@ -124,6 +127,7 @@ const TrackTitleNavigator: React.FC<TrackTitleNavigatorProps> = ({
                 <AnimatePresence initial={false} mode="sync">
                     <motion.div
                         key={enterSeq}
+                        data-folia-track-title-text="true"
                         className="absolute inset-y-0 left-14 right-14 flex items-center"
                         initial={{ opacity: 0, x: slide }}
                         animate={{ opacity: isPreview ? 0 : 1, x: 0 }}
@@ -137,6 +141,7 @@ const TrackTitleNavigator: React.FC<TrackTitleNavigatorProps> = ({
                 {/* 预览层：纯 CSS opacity 交叉淡入，不参与 key 变化 */}
                 <div
                     aria-hidden
+                    data-folia-track-title-text="true"
                     className="absolute inset-y-0 left-14 right-14 flex items-center transition-opacity duration-200"
                     style={{ opacity: isPreview ? PREVIEW_OPACITY : 0 }}
                 >

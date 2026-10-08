@@ -50,9 +50,10 @@ const PlaylistSelectionDialog: React.FC<PlaylistSelectionDialogProps> = ({
             title={title}
             description={description}
             maxWidthClass="max-w-lg"
+            panelKind="playlist-selection"
         >
             {playlists.length > 0 ? (
-                <div className="space-y-3">
+                <div data-folia-playlist-selection="true" className="space-y-3">
                     {onCreate && (
                         <button
                             type="button"
@@ -64,11 +65,12 @@ const PlaylistSelectionDialog: React.FC<PlaylistSelectionDialogProps> = ({
                             {createLabel || t('localMusic.saveQueueAsPlaylist') || 'Create Playlist'}
                         </button>
                     )}
-                    <div className="max-h-[320px] space-y-2 overflow-y-auto pr-1 custom-scrollbar">
+                    <div data-folia-playlist-list="true" className="max-h-[320px] space-y-2 overflow-y-auto pr-1 custom-scrollbar">
                     {playlists.map((playlist) => (
                         <button
                             key={playlist.id}
                             type="button"
+                            data-folia-playlist-option="true"
                             onClick={async () => {
                                 try {
                                     setSubmittingId(playlist.id);
@@ -93,7 +95,7 @@ const PlaylistSelectionDialog: React.FC<PlaylistSelectionDialogProps> = ({
                     </div>
                 </div>
             ) : (
-                <div className="space-y-3">
+                <div data-folia-playlist-selection="true" className="space-y-3">
                     {onCreate && (
                         <button
                             type="button"

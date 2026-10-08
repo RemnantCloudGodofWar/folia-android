@@ -12,6 +12,8 @@ interface ThemedDialogProps {
     children: React.ReactNode;
     footer?: React.ReactNode;
     maxWidthClass?: string;
+    /** Optional stable marker for phone-fit CSS that needs to target one dialog kind. */
+    panelKind?: string;
     /**
      * Blocks the two close paths this dialog owns - the X and the backdrop - while the caller is
      * mid-way through work a close would leave half-applied. Also dims the X so the wait shows:
@@ -32,6 +34,7 @@ const ThemedDialog: React.FC<ThemedDialogProps> = ({
     children,
     footer,
     maxWidthClass = 'max-w-md',
+    panelKind,
     closeDisabled = false,
     closeDisabledTitle,
 }) => {
@@ -72,6 +75,7 @@ const ThemedDialog: React.FC<ThemedDialogProps> = ({
                         transition={{ type: 'spring', stiffness: 280, damping: 24 }}
                         onClick={(event) => event.stopPropagation()}
                         data-folia-themed-dialog="true"
+                        data-folia-themed-dialog-kind={panelKind}
                         className={`relative w-full ${maxWidthClass} rounded-3xl border ${bgClass} p-6 shadow-2xl backdrop-blur-sm`}
                     >
                         <button

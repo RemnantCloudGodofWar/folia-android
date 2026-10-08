@@ -2802,31 +2802,38 @@ async function resolveKGSongPlayUrlUncached(hash, albumId, albumAudioId, cookieH
   const cached = await loadKGVipSessionCache(kgCookieUserId(cookieHeader));
   const hasVipEntitlement = Number(vipType) > 0
     || !!resolveKGEffectiveVipToken(cookieHeader, cached);
-  if (hasVipEntitlement) {
-    const fastHit = await runKGPlayStrategy(
-      'lite-v5',
-      () => fetchKGAndroidFastSongUrl(hash, albumId, albumAudioId, cookieHeader, vipType, q)
-        .then((url) => (url ? { url, source: 'android-fast-v5' } : null)),
-      KG_FAST_SONG_URL_DEADLINE_MS,
-    );
-    if (fastHit && fastHit.url) return fastHit;
-  } else {
-    noteLibraryStep('kugou', 'url:fast-skip', { reason: 'no-vip-entitlement' });
-  }
-  const tasks = [
+  // Always try the lite endpoint first. It is the fastest source for both VIP and normal
+  // tracks, and a logged-in session can resolve VIP entitlement between calls.
+  noteLibraryStep('kugou', 'url:fast-attempt', { hasVipEntitlement });
+  const fastHit = await runKGPlayStrategy(
+    'lite-v5',
+    () => fetchKGAndroidFastSongUrl(hash, albumId, albumAudioId, cookieHeader, vipType, q)
+      .then((url) => (url ? { url, source: 'android-fast-v5' } : null)),
+    KG_FAST_SONG_URL_DEADLINE_MS,
+  );
+  if (fastHit && fastHit.url) return fastHit;
+
+  // Keep the cheap v5/playInfo sources ahead of the tracker fan-out. The tracker path can
+  // launch a dozen requests; doing that while audio is loading makes playback feel slow.
+  const preferredTasks = [
     () => runKGPlayStrategy('v5', () => fetchKGTrackerV5Url(hash, albumId, albumAudioId, cookieHeader, vipType, q)
       .then((result) => (result.url ? { url: result.url, source: 'v5', tracker: result } : null))),
-    () => runKGPlayStrategy('getdata', () => fetchKGPlayGetData(hash, albumId, albumAudioId, cookieHeader, vipType)
-      .then((url) => (url ? { url, source: 'getdata' } : null))),
-    () => runKGPlayStrategy('tracker', () => fetchKGTrackerUrl(hash, albumId, albumAudioId, cookieHeader, vipType)
-      .then((result) => (result.url ? { url: result.url, source: 'tracker', tracker: result } : null))),
     () => runKGPlayStrategy('playInfo', () => fetchKGPlayInfo(hash, albumAudioId, cookieHeader)
       .then((info) => {
         const url = pickPlayInfoUrl(info);
         return url ? { url, source: 'playInfo' } : null;
       })),
   ];
-  return raceKGPlayTasks(tasks, (result) => result);
+  const preferredHit = await raceKGPlayTasks(preferredTasks, (result) => result);
+  if (preferredHit && preferredHit.url) return preferredHit;
+
+  const fallbackTasks = [
+    () => runKGPlayStrategy('getdata', () => fetchKGPlayGetData(hash, albumId, albumAudioId, cookieHeader, vipType)
+      .then((url) => (url ? { url, source: 'getdata' } : null))),
+    () => runKGPlayStrategy('tracker', () => fetchKGTrackerUrl(hash, albumId, albumAudioId, cookieHeader, vipType)
+      .then((result) => (result.url ? { url: result.url, source: 'tracker', tracker: result } : null))),
+  ];
+  return raceKGPlayTasks(fallbackTasks, (result) => result);
 }
 
 async function resolveKGSongPlayUrl(hash, albumId, albumAudioId, cookieHeader, login, qualityCode) {

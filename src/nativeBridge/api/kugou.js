@@ -1432,13 +1432,11 @@ function buildKGLiteTrackerKey(hash, mid, userId) {
 }
 
 /**
- * Fast path copied from KuGouMusicApi v1.6.0 `module/song_url.js`.
- *
- * The upstream PC build uses the concept/lite client parameters here and skips the regular
- * signature (`notSign`) while still adding the lite `key`. Keeping this request first avoids
- * waiting on the older fallback probes when the account already has the reward entitlement.
+ * Fast path for the Android V5 request that the native bridge can verify with a valid reward
+ * session. It mirrors the successful 20489/clientver variant as a single first request instead
+ * of walking the older 11430 probes before it.
  */
-async function fetchKGLiteSongUrl(hash, albumId, albumAudioId, cookieHeader, quality) {
+async function fetchKGAndroidFastSongUrl(hash, albumId, albumAudioId, cookieHeader, loginVipType, quality) {
   hash = String(hash || '').trim().toLowerCase();
   if (!hash) return '';
   cookieHeader = await enrichKGCookieHeader(cookieHeader, { preferAppToken: true });
@@ -1448,39 +1446,45 @@ async function fetchKGLiteSongUrl(hash, albumId, albumAudioId, cookieHeader, qua
   const mid = await getKGMid(cookieHeader);
   const dfid = kgCookieDfid(cookieHeader) || kgRandomString(24);
   const clienttime = Math.floor(Date.now() / 1000);
+  const cached = await loadKGVipSessionCache(userId);
+  const vipToken = resolveKGEffectiveVipToken(cookieHeader, cached);
+  const vipType = resolveKGTrackerVipType(cookieHeader, loginVipType || (cached && cached.vipType));
   const params = {
     album_id: Number(albumId) || 0,
     area_code: 1,
     hash,
     ssa_flag: 'is_fromtrack',
-    version: KG_TRACKER_CLIENTVER,
-    page_id: 967177915,
+    version: KG_ANDROID_CLIENTVER,
+    page_id: 151369488,
     quality: quality || 128,
     album_audio_id: Number(albumAudioId) || 0,
     behavior: 'play',
-    pid: 411,
+    pid: 2,
     cmd: 26,
     pidversion: 3001,
     IsFreePart: 0,
-    ppage_id: '356753938,823673182,967485191',
+    ppage_id: '463467626,350369493,788954147',
     cdnBackup: 1,
     module: '',
-    clientver: KG_TRACKER_CLIENTVER,
+    clientver: KG_ANDROID_CLIENTVER,
     dfid,
     mid,
     uuid: '-',
-    appid: KG_LITE_APPID,
+    appid: KG_ANDROID_APPID,
     clienttime,
     token,
     userid: userId,
   };
-  params.key = buildKGLiteTrackerKey(hash, mid, userId);
+  if (vipType) params.vipType = vipType;
+  if (vipToken) params.vip_token = vipToken;
+  params.key = buildKGTrackerKey(hash, mid, userId, KG_ANDROID_APPID);
+  params.signature = signatureKGAndroidParams(params);
   const qs = Object.keys(params)
     .map((key) => `${encodeURIComponent(key)}=${encodeURIComponent(params[key])}`)
     .join('&');
   const url = `https://gateway.kugou.com/v5/url?${qs}`;
   const startedAt = Date.now();
-  noteLibraryStep('kugou', 'url:http:start', { name: 'lite-v5', host: 'gateway.kugou.com' });
+  noteLibraryStep('kugou', 'url:http:start', { name: 'android-fast-v5', host: 'gateway.kugou.com' });
   try {
     const body = await kgFetchJSON(url, {
       mobile: true,
@@ -1499,7 +1503,7 @@ async function fetchKGLiteSongUrl(hash, albumId, albumAudioId, cookieHeader, qua
       },
     });
     noteLibraryStep('kugou', 'url:http:done', {
-      name: 'lite-v5',
+      name: 'android-fast-v5',
       host: 'gateway.kugou.com',
       ms: Date.now() - startedAt,
       status: body && body.status,
@@ -1507,7 +1511,7 @@ async function fetchKGLiteSongUrl(hash, albumId, albumAudioId, cookieHeader, qua
     return parseKGPlayUrl(body);
   } catch (error) {
     noteLibraryStep('kugou', 'url:http:error', {
-      name: 'lite-v5',
+      name: 'android-fast-v5',
       host: 'gateway.kugou.com',
       ms: Date.now() - startedAt,
       error: error instanceof Error ? error.message : String(error),
@@ -1532,9 +1536,9 @@ async function fetchKGTrackerV5Url(hash, albumId, albumAudioId, cookieHeader, lo
   const qualityCode = Number(quality) || 128;
   // Match KuGouMusicApi song_url: version/clientver=11430, no vipType in query; then fallbacks.
   const attempts = [
-    { clientver: KG_TRACKER_CLIENTVER, withVipType: false },
-    { clientver: KG_TRACKER_CLIENTVER, withVipType: true },
     { clientver: Number(KG_ANDROID_CLIENTVER), withVipType: true },
+    { clientver: KG_TRACKER_CLIENTVER, withVipType: true },
+    { clientver: KG_TRACKER_CLIENTVER, withVipType: false },
   ];
   const leanCookie = buildKGLeanCookie(cookieHeader);
   let lastStatus = 0;
@@ -2563,7 +2567,7 @@ async function fetchKGTrackerUrl(hash, albumId, albumAudioId, cookieHeader, logi
  * 这样既能保证一定会返回，也能看出是哪一条拖住了。
  */
 const KG_PLAY_STRATEGY_DEADLINE_MS = 12000;
-const KG_LITE_SONG_URL_DEADLINE_MS = 1800;
+const KG_FAST_SONG_URL_DEADLINE_MS = 1800;
 
 async function runKGPlayStrategy(name, run, deadlineMs = KG_PLAY_STRATEGY_DEADLINE_MS) {
   const startedAt = Date.now();
@@ -2600,9 +2604,9 @@ async function resolveKGSongPlayUrl(hash, albumId, albumAudioId, cookieHeader, l
   const q = Number(qualityCode) || 128;
   const fastHit = await runKGPlayStrategy(
     'lite-v5',
-    () => fetchKGLiteSongUrl(hash, albumId, albumAudioId, cookieHeader, q)
-      .then((url) => (url ? { url, source: 'lite-v5' } : null)),
-    KG_LITE_SONG_URL_DEADLINE_MS,
+    () => fetchKGAndroidFastSongUrl(hash, albumId, albumAudioId, cookieHeader, vipType, q)
+      .then((url) => (url ? { url, source: 'android-fast-v5' } : null)),
+    KG_FAST_SONG_URL_DEADLINE_MS,
   );
   if (fastHit && fastHit.url) return fastHit;
   const tasks = [

@@ -70,6 +70,7 @@ import {
     useLibraryBrowseSessionStore,
 } from '../../../core/state/useLibraryBrowseSessionStore';
 import { useLocalTrackSortStore } from '../../../core/state/useLocalTrackSortStore';
+import { useAndroidLayoutSettingsStore } from '../../../../stores/useAndroidLayoutSettingsStore';
 
 interface GridViewProps {
     title: string;
@@ -127,7 +128,8 @@ const EMPTY_TRACKS: SongResult[] = [];
 // Card box and hex spacing per container-width breakpoint. Module scope so the memo above
 // reads as "pick a breakpoint, then apply the square-card option" rather than hiding the
 // table inside it.
-const resolveGridViewCardBox = (width: number) => {
+const resolveGridViewCardBox = (width: number, scale = 1) => {
+    const base = (() => {
     if (width < 768) {
         // Mobile/Narrow
         return {
@@ -173,6 +175,19 @@ const resolveGridViewCardBox = (width: number) => {
             lodEnd: 510,
         };
     }
+    })();
+    if (scale === 1) {
+        return base;
+    }
+    return {
+        cardWidth: Math.round(base.cardWidth * scale),
+        cardHeight: Math.round(base.cardHeight * scale),
+        spacingX: Math.round(base.spacingX * scale),
+        spacingY: Math.round(base.spacingY * scale),
+        maxDistance: Math.round(base.maxDistance * scale),
+        lodStart: Math.round(base.lodStart * scale),
+        lodEnd: Math.round(base.lodEnd * scale),
+    };
 };
 
 const GRID_VIEW_RENDER_BUFFER_FACTOR = 0.75;
@@ -251,6 +266,14 @@ export const GridView: React.FC<GridViewProps> = ({
     const squareCards = useGridViewSettingsStore(state => state.gridViewSquareCards) && fullBleedCover;
     const minCardScale = useGridViewSettingsStore(state => state.gridViewMinCardScale);
     const minCardOpacity = useGridViewSettingsStore(state => state.gridViewMinCardOpacity);
+    // 手机适配横屏：屏幕又宽又矮，桌面档位的卡片会占满半个屏高并压到底部控制条上。
+    // 只在这种模式下把整套卡片与间距等比缩小。orientation 以根节点上的属性为准：探针
+    // 与真机都靠它切换，不依赖 store 的初始化时机；订阅 store 是为了属性变化时能重渲染。
+    const phoneFitOrientation = useAndroidLayoutSettingsStore(state => state.phoneFitOrientation);
+    const phoneFitLandscape = typeof document !== 'undefined'
+        && document.documentElement.getAttribute('data-folia-phone-fit') === 'true'
+        && document.documentElement.getAttribute('data-folia-phone-orientation') === 'landscape';
+    const cardScale = phoneFitLandscape ? 0.78 : 1;
     const containerRef = useRef<HTMLDivElement>(null);
     const dragControls = useDragControls();
     const [focusedIndex, setFocusedIndex] = useState(0);
@@ -302,9 +325,9 @@ export const GridView: React.FC<GridViewProps> = ({
     // Layout values for different container size breakpoints
     const layoutConfig = useMemo(() => {
         const width = containerSize.width;
-        const box = resolveGridViewCardBox(width);
+        const box = resolveGridViewCardBox(width, cardScale);
         return squareCards ? squareGridCardBox(box) : box;
-    }, [containerSize.width, squareCards]);
+    }, [containerSize.width, squareCards, cardScale]);
 
     // Dynamically calculate visible clipping radius centered on (0,0) viewport coordinates
     const clipRadius = useMemo(() => {
@@ -1517,6 +1540,7 @@ export const GridView: React.FC<GridViewProps> = ({
             {/* Honeycomb Drag/Viewport Canvas Area */}
             <div
                 ref={containerRef}
+                data-folia-grid-canvas="true"
                 onPointerDown={(event) => {
                     if (event.button !== 0) return; // 仅限鼠标左键或主要指针拖动
 

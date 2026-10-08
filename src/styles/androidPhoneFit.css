@@ -420,9 +420,47 @@ html[data-folia-phone-fit='true'][data-folia-phone-orientation='portrait'] [data
   left: calc(env(safe-area-inset-left, 0px) + 12px) !important;
 }
 
+/* Landscape phones: the next-up card also parks under the top-left back control instead of
+   sitting on the control bar it was overlapping. */
+html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-folia-now-playing-toast='true'] {
+  top: calc(env(safe-area-inset-top, 0px) + 72px) !important;
+  bottom: auto !important;
+  left: calc(env(safe-area-inset-left, 0px) + 12px) !important;
+}
+
+/* Landscape phones are short: the desktop-sized grid title chip reads as oversized and the
+   honeycomb canvas runs under the bottom control bar. Shrink the chip and reserve the bar's
+   strip so the card wall centres above it. */
+html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-folia-grid-canvas='true'] {
+  margin-bottom: 96px;
+}
+
+html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-ponder-page-scope='grid-view-page'] .group\/grid-title {
+  padding: 4px 12px !important;
+  border-radius: 12px !important;
+}
+
+html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-ponder-page-scope='grid-view-page'] .group\/grid-title h2 {
+  font-size: 0.95rem !important;
+  line-height: 1.2 !important;
+}
+
+html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-ponder-page-scope='grid-view-page'] .group\/grid-title p {
+  font-size: 11px !important;
+  line-height: 1.2 !important;
+}
+
 html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-ponder='player-bar'] button {
   min-width: 28px;
   min-height: 28px;
+}
+
+/* Keep the landscape capsule exactly on the viewport's horizontal centre. Sizes are untouched;
+   this only pins the translate that the desktop layout already relies on, so a stray transform
+   on an ancestor cannot push it off-centre. */
+html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-folia-player-bar-expanded] {
+  margin-left: auto;
+  margin-right: auto;
 }
 
 html[data-folia-phone-fit='true'] [data-folia-equalizer-bands] {
@@ -442,19 +480,35 @@ html[data-folia-phone-fit='true'] [data-folia-audio-effects] .grid {
 }
 
 html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-folia-themed-dialog-kind='playlist-selection'] {
-  width: min(72vw, 30rem) !important;
-  max-width: min(72vw, 30rem) !important;
+  width: min(64vw, 26rem) !important;
+  max-width: min(64vw, 26rem) !important;
   max-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 16px) !important;
-  padding: 12px !important;
+  padding: 10px !important;
+}
+
+html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-folia-themed-dialog-kind='playlist-selection'] h2 {
+  font-size: 0.95rem !important;
 }
 
 html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-folia-playlist-list='true'] {
-  max-height: min(42dvh, 220px);
+  max-height: min(36dvh, 190px);
 }
 
 html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-folia-playlist-option='true'] {
-  padding: 8px 12px !important;
-  border-radius: 12px !important;
+  padding: 6px 10px !important;
+  gap: 8px !important;
+  border-radius: 10px !important;
+}
+
+html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-folia-playlist-option='true'] div div:first-child {
+  font-size: 12px !important;
+}
+
+html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-folia-playlist-selection='true'] > button {
+  padding-top: 6px !important;
+  padding-bottom: 6px !important;
+  border-radius: 10px !important;
+  font-size: 12px !important;
 }
 
 @media (max-width: 600px) {

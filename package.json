@@ -8,7 +8,7 @@
     "email": "chthollyphile@users.noreply.github.com"
   },
   "private": true,
-  "version": "0.7.15-android.20",
+  "version": "0.7.15-android.21",
   "license": "AGPL-3.0",
   "type": "module",
   "engines": {
@@ -18,7 +18,7 @@
     "dev": "vite",
     "dev:probe": "vite --open /dev-probe.html",
     "build": "vite build",
-    "build:capacitor": "cross-env FOLIA_BUILD_TARGET=capacitor vite build",
+    "build:capacitor": "cross-env FOLIA_BUILD_TARGET=capacitor VITE_NETEASE_API_BASE=extension VITE_KUGOU_API_BASE=extension VITE_QQ_API_BASE=extension vite build",
     "cap:sync:android": "npm run build:capacitor && cap sync android",
     "cap:open:android": "cap open android",
     "cap:run:android": "npm run build:capacitor && cap run android",

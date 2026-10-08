@@ -116,6 +116,44 @@ html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [dat
   padding: 12px !important;
 }
 
+/* Landscape phones are short: shrink the top header and bottom player capsule a little without
+   changing their layout or the upstream components. */
+html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-folia-home-header] > div {
+  gap-y: 0 !important;
+  padding: 6px 12px !important;
+}
+
+html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-folia-home-header] h1 {
+  font-size: 1rem;
+}
+
+html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-folia-home-header] input {
+  padding-top: 4px !important;
+  padding-bottom: 4px !important;
+  font-size: 12px !important;
+}
+
+html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-folia-grid-tabs] {
+  max-height: 32px;
+  padding: 2px;
+}
+
+html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-folia-grid-tabs] button {
+  height: 24px;
+  padding-inline: 8px;
+  font-size: 11px;
+}
+
+html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-ponder='player-bar'] {
+  max-height: 42px;
+  padding: 5px 10px !important;
+}
+
+html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-ponder='player-bar'] button {
+  min-width: 28px;
+  min-height: 28px;
+}
+
 html[data-folia-phone-fit='true'] [data-folia-equalizer-bands] {
   padding: 10px;
 }

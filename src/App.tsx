@@ -104,6 +104,7 @@ import { useSongThemeAutoGeneration } from './hooks/useSongThemeAutoGeneration';
 import { useThemeController } from './hooks/useThemeController';
 import { useOnlineSongMetadataHydration } from './hooks/useOnlineSongMetadataHydration';
 import { useNativeMediaActions } from './hooks/useNativeMediaActions';
+import { useNativeBackButton } from './hooks/useNativeBackButton';
 import { resolveCommandPaletteSearchSource, resolveSearchSource, useSearchNavigationStore } from './stores/useSearchNavigationStore';
 import { useOnlineProviderAccountStore } from './stores/useOnlineProviderAccountStore';
 import { useShallow } from 'zustand/react/shallow';
@@ -1539,6 +1540,7 @@ export default function App() {
         next: () => { void handleNextTrack(); },
         previous: () => { void handlePrevTrack(); },
     });
+    useNativeBackButton();
 
     const { personalFmSelection, personalFmSelectionLabel, isPersonalFmModeSupported, setPersonalFmSelection } = usePersonalFmModeController({
         isFmMode,

@@ -99,6 +99,17 @@ public class FoliaNativePlugin extends Plugin {
         plugin.getActivity().runOnUiThread(() -> plugin.notifyListeners("mediaAction", payload));
     }
 
+    /** True when the WebView handled Back; false lets the activity fall back to normal exit. */
+    static boolean emitBackPressed() {
+        FoliaNativePlugin plugin = instance;
+        if (plugin == null || !plugin.hasListeners("backButton")) return false;
+        Activity activity = plugin.getActivity();
+        if (activity == null) return false;
+        JSObject payload = new JSObject();
+        activity.runOnUiThread(() -> plugin.notifyListeners("backButton", payload));
+        return true;
+    }
+
     static void notePlaybackArtwork(String coverUrl, String status, String detail) {
         playbackArtworkCover = describePlaybackArtworkUrl(coverUrl);
         playbackArtworkStatus = status == null || status.isEmpty() ? "unknown" : status;
@@ -417,6 +428,13 @@ public class FoliaNativePlugin extends Plugin {
         result.put("at", playbackArtworkAt);
         result.put("applied", playbackArtworkApplied);
         call.resolve(result);
+    }
+
+    @PluginMethod
+    public void exitApp(PluginCall call) {
+        Activity activity = getActivity();
+        call.resolve();
+        if (activity != null) activity.runOnUiThread(activity::finish);
     }
 
     @PluginMethod

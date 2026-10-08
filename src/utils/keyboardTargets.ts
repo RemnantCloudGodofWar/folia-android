@@ -31,3 +31,36 @@ export const isTextEntryTarget = (target: EventTarget | null) => {
 export const hasBlockingWindow = () => Boolean(
     document.querySelector('[data-folia-keyboard-window="true"]')
 );
+
+/**
+ * 把一次按键归一化成一个 "逻辑键码"（等价于 DOM 的 keyboard event code token）。
+ *
+ * 正常情况下直接返回 event.code —— 它与键盘布局无关，是全局快捷键判定的权威来源。
+ * 但软件注入的按键（比如只带 wVk、不带扫描码的 SendInput）在 Chromium 里会拿到空的
+ * event.code，只剩 event.key 有值。这时用 event.key 反推出等价的 code token，
+ * 让所有统一走 event.code 的快捷键照样命中。加了这段兜底，物理键盘的行为零变化。
+ */
+export const effectiveKeyCode = (event: KeyboardEvent): string => {
+    if (event.code) {
+        return event.code;
+    }
+
+    const key = event.key;
+    if (key.length === 1) {
+        if (/[a-zA-Z]/.test(key)) {
+            return `Key${key.toUpperCase()}`;
+        }
+        switch (key) {
+            case ' ':
+                return 'Space';
+            case '[':
+                return 'BracketLeft';
+            case ']':
+                return 'BracketRight';
+            default:
+                return '';
+        }
+    }
+    // 命名键（Escape / ArrowLeft / Tab / Enter 等）的 key 与 code token 同名，直接用。
+    return key;
+};

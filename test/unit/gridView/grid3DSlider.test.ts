@@ -12,7 +12,7 @@ import {
     resolveGrid3DLeapPlan,
     resolveGrid3DTransitionMode,
     resolveGrid3DWheelInput,
-} from '../../../src/components/folia-grid/Grid3DSlider';
+} from '../../../src/library/suites/grid/home/Grid3DSlider';
 
 // test/unit/gridView/grid3DSlider.test.ts
 // Verifies collection cards use real descriptions instead of a hard-coded symbol.
@@ -29,16 +29,21 @@ describe('getGrid3DSliderSecondaryText', () => {
         expect(getGrid3DSliderSecondaryText(folder)).toBe('Astros/Classics/Cello');
     });
 
-    it('keeps virtual folder labels unchanged', () => {
-        const folder = {
-            type: 'folder',
-            name: '全部歌曲',
-            description: '本地',
-            isVirtual: true,
-        };
+    // 虚拟的「全部歌曲」在路径的位置显示自己的名称，不退回描述「本地 / Folder」：这是 local-library
+    // 截图基线里的文字。P3.1 起滑条条目带上 isVirtual 后这里改过一次，这条用例把它钉住。
+    it('shows the virtual All Songs folder by its name on the second line, not its description', () => {
+        for (const name of ['全部歌曲', 'All Songs']) {
+            const folder = {
+                type: 'folder',
+                name,
+                description: name === 'All Songs' ? 'Folder' : '本地',
+                isVirtual: true,
+            };
 
-        expect(getGrid3DSliderDisplayName(folder)).toBe('全部歌曲');
-        expect(getGrid3DSliderSecondaryText(folder)).toBe('本地');
+            expect(getGrid3DSliderDisplayName(folder)).toBe(name);
+            expect(getGrid3DSliderSecondaryText(folder)).toBe(name);
+            expect(getGrid3DSliderSummaryText(folder)).toBe('');
+        }
     });
 
     it('prefers a playlist summary and falls back to its description', () => {

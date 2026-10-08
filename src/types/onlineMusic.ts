@@ -180,7 +180,27 @@ export type QrLoginState =
     | { state: 'scanned' }
     | { state: 'confirmed' }
     | { state: 'expired' }
-    | { state: 'error'; message?: string };
+    | {
+        state: 'error';
+        message?: string;
+        /** 结构化的失败原因；provider 能确定时才给（例如用户在手机上取消了登录）。 */
+        reason?: QrLoginErrorReason;
+        /** 后端要求的冷却时长：这段时间内重新要码只会被拒（429），界面应先等它结束。 */
+        retryAfterMs?: number;
+        /**
+         * 这次轮询在网络层失败（没拿到上游的回应，例如连接被重置）：二维码在服务端仍然有效，
+         * 会话会接着轮询，连续失败超过上限才算登录失败。
+         */
+        transient?: boolean;
+        /** 后端返回的原始字段（返回码、失败阶段与原因等），原样进诊断时间线。 */
+        detail?: Record<string, unknown>;
+    };
+
+/**
+ * 扫码失败的结构化原因：「在手机上取消」是用户自己的操作，不需要诊断入口；「连接被重置」是轮询请求被
+ * 上游直接断开，同一网络出口和设备标识下反复重试多半无效，界面要提示换网络或重启应用。
+ */
+export type QrLoginErrorReason = 'canceled-on-device' | 'connection-reset';
 
 // 扫码登录失败的几种形态，决定登录弹窗要不要给出「复制诊断信息」入口。
 // 没扫码就过期属于正常情况，不算失败；扫过码却过期，多半是手机端确认被拒。
@@ -188,7 +208,11 @@ export type QrLoginFailureKind =
     | 'start-error'
     | 'check-error'
     | 'expired-after-scan'
-    | 'account-refresh-failed';
+    | 'account-refresh-failed'
+    // 用户在手机上取消了这次登录：照常可以重试（可能要先等冷却），不给诊断入口。
+    | 'canceled-on-device'
+    // 轮询请求被上游断开（ECONNRESET）：照常给诊断入口，状态行提示换网络或重启应用。
+    | 'connection-reset';
 
 export type ProviderErrorCode =
     | 'auth-required'
@@ -209,6 +233,10 @@ export class OnlineProviderError extends Error {
         message: string,
         public readonly providerId?: OnlineProviderId,
         public readonly cause?: unknown,
+        /** 非 2xx 响应的 HTTP 状态，与响应体里的 code 分开；只有按 HTTP 状态分流的 transport 会传。 */
+        public readonly httpStatus?: number,
+        /** 后端要求的冷却时长（429 退避）；只有能读出它的 transport 会传。 */
+        public readonly retryAfterMs?: number,
     ) {
         super(message);
         this.name = 'OnlineProviderError';
@@ -260,6 +288,66 @@ export interface QrLoginMethod {
     iconKey: string;     // 图标识别值，由 UI 层映射到静态资源
 }
 
+/** 自检里一项失败的原因：Node 错误码（没有时为 null）、原文、断在哪一步。 */
+export type LoginSelfCheckError = {
+    code: string | null;
+    message: string;
+    phase?: 'dns' | 'tcp' | 'tls' | 'http';
+};
+
+export type LoginSelfCheckAddress = { address: string; family: 4 | 6 };
+
+/** 对一个上游域名的检查：DNS → 分协议族的 TCP + TLS 握手 → 一次真实的 HTTPS 请求。 */
+export type LoginSelfCheckHost = {
+    host: string;
+    dns: {
+        addresses: LoginSelfCheckAddress[];
+        durationMs: number;
+        error: LoginSelfCheckError | null;
+        /** DNS 返回了 198.18.0.0/15（TUN 模式代理的 fake-ip）。 */
+        fakeIp: boolean;
+    };
+    connections: Array<LoginSelfCheckAddress & {
+        tcpMs: number | null;
+        tlsMs: number | null;
+        error: LoginSelfCheckError | null;
+        protocol?: string | null;
+    }>;
+    https: {
+        httpStatus: number | null;
+        durationMs: number;
+        remote: LoginSelfCheckAddress | null;
+        error: LoginSelfCheckError | null;
+        /** 本机时间减服务器 Date 头的时间（毫秒）；拿不到时为 null。 */
+        clockSkewMs: number | null;
+    } | null;
+};
+
+/**
+ * 扫码登录失败后的主动自检结果。桌面版由主进程检查本地后端、代理、DNS、TCP / TLS 与 HTTPS；
+ * 网页版只能检查配置的远端 API 能不能连上（hosts 为空、proxy 为 null）。
+ */
+export type LoginSelfCheckResult = {
+    providerId: OnlineProviderId;
+    runtime: 'electron' | 'web';
+    startedAt: number;
+    durationMs: number;
+    backend: {
+        /** 桌面版是内嵌后端的状态（running / starting / error / unavailable）；网页版固定为 remote。 */
+        status: string;
+        port: number | null;
+        error: string | null;
+        /** 对后端发的一次 HTTP 请求；后端不在运行时为 null。 */
+        probe: { ok: boolean; httpStatus: number | null; durationMs: number; error: LoginSelfCheckError | null } | null;
+        /** 网页版检查的远端 API 地址。 */
+        url?: string;
+    } | null;
+    proxy: { env: Record<string, string>; system: string | null } | null;
+    hosts: LoginSelfCheckHost[];
+    /** 桌面版的凭据加密后端（safeStorage）；Linux 上为 basic_text 时 QQ 的登录态无法保存。网页版没有。 */
+    credentialStore?: { encryptionAvailable?: boolean; backend?: string | null; error?: string } | null;
+};
+
 export interface OnlineAuthProvider {
     getLoginStatus(): Promise<ProviderUser | null>;
     logout(): Promise<void>;
@@ -275,9 +363,13 @@ export interface OnlineAuthProvider {
     // 二维码的有效期。声明了它，UI 才会自己计时并在到点时停止轮询、给出重试；
     // 不声明就沿用原本的做法——只认后端报出的过期状态。
     getQrTtlMs?(): number;
-    // 扫码登录失败后附进诊断报告的 provider 专属信息，每项一行、已格式化好。
-    // 只能返回可以公开贴出来的内容：不含 cookie、token、IP 或账号信息。
+    // 扫码登录失败后附进诊断报告的 provider 专属信息，每项一行、已格式化好（后端状态、拉起步骤、请求与连接记录等）。
+    // 报告会贴进公开的 issue，界面已告知用户其中包含哪些数据；登录凭据（cookie、token、session）的值不能出现。
     getQrLoginDiagnostics?(): Promise<string[]>;
+    // 主动自检：扫码登录失败后由会话调用一次，结果进诊断报告，结论显示在登录界面上。
+    // canRunQrLoginSelfCheck 同步回答此刻能不能检查（界面据此决定要不要显示「正在检查」）。
+    canRunQrLoginSelfCheck?(): boolean;
+    runQrLoginSelfCheck?(): Promise<LoginSelfCheckResult | null>;
 }
 
 export interface OnlineLibraryProvider {

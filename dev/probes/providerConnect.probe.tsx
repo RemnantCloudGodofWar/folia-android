@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import OnlineProviderConnectPanel from '../../src/components/app/home/OnlineProviderConnectPanel';
-import { canSwitchToProviderDirectly } from '../../src/components/app/home/onlineProviderAccountView';
+import OnlineProviderConnectPanel from '../../src/library/suites/grid/account/OnlineProviderConnectPanel';
+import { canSwitchToProviderDirectly } from '../../src/library/core/model/onlineProviderAccountView';
 import type { ProviderAccountSummary } from '../../src/types/onlineMusic';
 import type { ProbeDefinition } from './definition';
 

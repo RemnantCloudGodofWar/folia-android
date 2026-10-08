@@ -40,7 +40,7 @@ test/test-song/*
 test/test-ReplayGain
 impl.md
 test-results/
-test-results/.dev-credentials
+.dev-credentials/
 .codex-remote-attachments
 test/manual/lyric-output/*
 test/manual/lyric-audit-output/*    

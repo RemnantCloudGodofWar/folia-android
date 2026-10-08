@@ -81,6 +81,16 @@ export const matchesCommandScope = (scope: CommandScope | undefined, context?: C
             return context.scope.filter !== null;
         case 'grid-surface':
             return context.scope.grid !== null;
+        case 'directory-surface':
+            return context.scope.directory !== null;
+        case 'artist-surface':
+            return context.scope.artist != null;
+        case 'suite-chrome':
+            // A suite's chrome only exists in the library, which only exists on the home view. Saying so
+            // here, rather than trusting the registration alone, is what makes this scope provably disjoint
+            // from `lattice` and `player-surface` (executeShortcuts.ts relies on it to share keys); it also
+            // covers the moment between leaving home and the suite unregistering.
+            return context.scope.view === 'home' && context.scope.chrome != null;
         default:
             return true;
     }

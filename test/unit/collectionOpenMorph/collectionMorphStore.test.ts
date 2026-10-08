@@ -2,15 +2,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     reportMorphCapture,
     useCollectionMorphStore,
-} from '@/components/collectionOpenMorph/collectionMorphStore';
-import type { CollectionMorphCapture } from '@/components/collectionOpenMorph/morphProbes';
+} from '@/library/suites/grid/transitions/collectionMorphStore';
+import type { CollectionMorphCapture } from '@/library/suites/grid/transitions/morphProbes';
 import {
     COLLECTION_MORPH_OBSERVATION_WINDOW_MS,
     COLLECTION_MORPH_PLAN_TTL_MS,
     type CollectionMorphHeroMeasured,
     type CollectionMorphPending,
     type CollectionMorphRect,
-} from '@/components/collectionOpenMorph/morphGeometry';
+} from '@/library/suites/grid/transitions/morphGeometry';
 import { useCollectionNavigationStore } from '@/stores/useCollectionNavigationStore';
 import type { GridViewCollectionDescriptor } from '@/components/app/home/gridViewCollectionAdapters';
 

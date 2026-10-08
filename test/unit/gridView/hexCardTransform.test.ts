@@ -3,8 +3,8 @@ import {
     applyHexCardFrameStyles,
     computeHexCardFrame,
     type HexCardFrameStyleCache,
-} from '../../../src/components/folia-grid/hexCardTransform';
-import type { HexGridCoord } from '../../../src/components/folia-grid/hexViewport';
+} from '../../../src/library/suites/grid/shared/hexCardTransform';
+import type { HexGridCoord } from '../../../src/library/suites/grid/shared/hexViewport';
 
 // Verifies GridView card-frame math and cached style application.
 const makeCoord = (baseX: number, baseY = 0): HexGridCoord => ({

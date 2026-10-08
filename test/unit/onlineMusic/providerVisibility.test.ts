@@ -1,8 +1,8 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it } from 'vitest';
-import OnlineProviderConnectPanel from '@/components/app/home/OnlineProviderConnectPanel';
-import OnlineProviderSwitcher from '@/components/app/home/OnlineProviderSwitcher';
+import OnlineProviderConnectPanel from '@/library/suites/grid/account/OnlineProviderConnectPanel';
+import OnlineProviderSwitcher from '@/library/suites/grid/account/OnlineProviderSwitcher';
 import { vi } from 'vitest';
 import type { ProviderAccountSummary } from '@/types/onlineMusic';
 

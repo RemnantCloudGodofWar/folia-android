@@ -59,13 +59,13 @@ export function collectByName(symbols, name, out = []) {
  * 组件几乎总是消费方，测试永远排最后。
  */
 const ROLE_ORDER = [
-    [/^src\/stores\//, 0],
-    [/^src\/types/, 1],
-    [/^src\/services\//, 2],
-    [/^src\/utils\//, 3],
+    [/^src\/(stores|library\/core\/state)\//, 0],
+    [/^src\/(types|library\/core\/contracts\/)/, 1],
+    [/^src\/(services|library\/core\/services)\//, 2],
+    [/^src\/(utils|library\/core\/model)\//, 3],
     [/^(shared|sync-server|worker|api|api-ts)\//, 4],
-    [/^src\/hooks\//, 5],
-    [/^src\/components\//, 7],
+    [/^src\/(hooks|library\/core\/bindings)\//, 5],
+    [/^src\/(components|library\/(suites|app))\//, 7],
     [/(^|\/)(test|tests)\/|\.(test|spec)\.[tj]sx?$/, 9],
 ];
 const roleRank = rel => ROLE_ORDER.find(([pattern]) => pattern.test(rel))?.[1] ?? 6;

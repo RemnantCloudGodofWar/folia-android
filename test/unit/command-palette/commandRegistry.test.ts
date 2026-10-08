@@ -15,7 +15,7 @@ type CommandPaletteContextOverrides = {
 const createContext = (overrides: CommandPaletteContextOverrides = {}): CommandPaletteContext => {
     const base: CommandPaletteContext = {
         // The palette's original and still most common surface; the home cases say so explicitly.
-        scope: { view: 'player', filter: null, grid: null },
+        scope: { view: 'player', filter: null, grid: null, directory: null, artist: null, chrome: null },
         shared: {
             t: (_key: string, fallback?: string) => fallback ?? '',
             setStatusMsg: vi.fn(),
@@ -95,6 +95,10 @@ const createContext = (overrides: CommandPaletteContextOverrides = {}): CommandP
             toggleSubtitleOverlayBackground: vi.fn(),
             playbackEntryView: 'player' as const,
             setPlaybackEntryView: vi.fn(),
+            librarySuiteOptions: vi.fn(() => [{ id: 'grid', labelKey: 'libraryTui.rendererGrid' }, { id: 'tui', labelKey: 'libraryTui.rendererTui' }]),
+            activeLibrarySuite: vi.fn(() => 'grid'),
+            canChooseLibrarySuite: vi.fn(() => true),
+            chooseLibrarySuite: vi.fn(),
             ponderHintVisibility: 'always' as const,
             setPonderHintVisibility: vi.fn(),
             togglePonderTouchButton: vi.fn(),

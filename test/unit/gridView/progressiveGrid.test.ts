@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { appendUniqueByKey, deriveProgressiveLoadingState } from '../../../src/components/folia-grid/progressiveGrid';
-import { buildArtistGridCoords, getArtistGridAlbumCoverUrl } from '../../../src/components/ArtistGridView';
+import { deriveProgressiveLoadingState } from '../../../src/library/suites/grid/shared/progressiveGrid';
+import { appendUniqueByKey } from '../../../src/library/core/model/collectionPaging';
+import { buildArtistGridCoords } from '../../../src/library/suites/grid/artist/ArtistGridView';
+import { artistAlbumCoverUrl as getArtistGridAlbumCoverUrl } from '../../../src/library/core/model/artistModel';
 
 // Unit coverage for progressive loading state and stable ArtistGrid album placement.
 

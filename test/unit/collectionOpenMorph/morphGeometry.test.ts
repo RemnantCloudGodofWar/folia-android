@@ -13,7 +13,7 @@ import {
     MORPH_CIRCLE_RADIUS,
     radiusPercent,
     type CollectionMorphRect,
-} from '@/components/collectionOpenMorph/morphGeometry';
+} from '@/library/suites/grid/transitions/morphGeometry';
 
 // test/unit/collectionOpenMorph/morphGeometry.test.ts
 // 移形换影的几何部分。这些公式之前散在三处（overlay / GridView / ArtistGridView），

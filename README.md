@@ -36,7 +36,7 @@ Lyrics Reimagined // 辞曲新境
 >
 > - 上游项目：[chthollyphile/folia-major](https://github.com/chthollyphile/folia-major)
 > - 上游许可证：**AGPL-3.0**（见 [LICENSE](LICENSE)）
-> - 本 fork 基于上游 `0.7.13` 修改而来，新增 Capacitor Android 容器、内置平台桥、后台播放前台服务、锁屏媒体控制与本地音乐等功能，
+> - 本 fork 基于上游 `0.7.15` 修改而来，新增 Capacitor Android 容器、内置平台桥、后台播放前台服务、锁屏媒体控制与本地音乐等功能，
 >   改动说明与构建步骤见 [ANDROID_PORT.md](ANDROID_PORT.md)
 > - 本仓库整体仍以 **AGPL-3.0** 发布，许可证未作任何修改或附加限制；第三方组件与许可见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)
 > - 上游 README 中「仅供个人学习、技术交流与非营利测试使用，请勿用于商业盈利用途」的声明同样适用于本 fork

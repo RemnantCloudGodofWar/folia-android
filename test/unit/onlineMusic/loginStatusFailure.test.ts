@@ -92,6 +92,40 @@ describe('login status failure handling', () => {
         expect(updateAccount).not.toHaveBeenCalled();
     });
 
+    // QQ 的原始错误文字可能带上后端或网络层的细节：只去掉 name / message，其余字段照记。
+    it('logs QQ failures without the raw error name and message', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => { });
+        warn.mockClear();
+        const { handlers } = setup(cachedUser);
+
+        await handleLoginStatusFailure(
+            new OnlineProviderError('network', 'private-error https://private.example/?cookie=private-cookie', 'qq', undefined, 502),
+            { ...handlers, providerId: 'qq' },
+        );
+
+        expect(warn).toHaveBeenCalledExactlyOnceWith('[LoginStatus] failure', {
+            providerId: 'qq',
+            hadCachedAccount: true,
+            authRequired: false,
+        });
+    });
+
+    it('keeps the raw error name and message for other providers', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => { });
+        warn.mockClear();
+        const { handlers } = setup(null);
+
+        await handleLoginStatusFailure(new OnlineProviderError('auth-required', 'KuGou login required', 'kugou'), handlers);
+
+        expect(warn).toHaveBeenCalledExactlyOnceWith('[LoginStatus] failure', {
+            providerId: 'kugou',
+            hadCachedAccount: false,
+            authRequired: true,
+            name: 'OnlineProviderError',
+            message: 'KuGou login required',
+        });
+    });
+
     it('clears an auth failure without an error flag when no account was cached', async () => {
         const { clearAuthState, handlers } = setup(null);
 

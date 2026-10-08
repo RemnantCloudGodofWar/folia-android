@@ -26,6 +26,12 @@ type SearchWorkspaceProps = {
     onAddTrackToQueue: (track: UnifiedSong) => void;
     onOpenArtist: (track: UnifiedSong, artistName: string, artistId?: MediaId, entityId?: string) => void;
     onOpenAlbum: (track: UnifiedSong, albumName: string, albumId?: MediaId, entityId?: string) => void;
+    /**
+     * 渲染前把结果重新套上当前的展示数据（本地曲目的歌手 / 专辑实体）。store 里的结果是提交那一刻的快照，
+     * 本地曲库的实体目录在导入后要晚一拍才加载完，那之前搜到的行没有专辑、歌手链接是灰的；
+     * 不在这里按当前目录重算，它们会一直停在那个状态，直到重新搜索。
+     */
+    resolveTrackDisplay?: (track: UnifiedSong) => UnifiedSong;
 };
 
 const SearchWorkspace: React.FC<SearchWorkspaceProps> = ({
@@ -38,6 +44,7 @@ const SearchWorkspace: React.FC<SearchWorkspaceProps> = ({
     onAddTrackToQueue,
     onOpenArtist,
     onOpenAlbum,
+    resolveTrackDisplay,
 }) => {
     const { t } = useTranslation();
     const {
@@ -65,7 +72,10 @@ const SearchWorkspace: React.FC<SearchWorkspaceProps> = ({
         setSearchQuery: state.setSearchQuery,
         setSearchScrollTop: state.setSearchScrollTop,
     })));
-    const results = searchResults || [];
+    const results = useMemo(() => {
+        const raw = searchResults || [];
+        return resolveTrackDisplay ? raw.map(resolveTrackDisplay) : raw;
+    }, [resolveTrackDisplay, searchResults]);
     const activeOnlineProviderId = useOnlineProviderAccountStore(state => state.activeProviderId);
     const sources = useMemo<SearchSource[]>(() => [activeOnlineProviderId, 'local', 'navidrome'], [activeOnlineProviderId]);
     const hasCollection = useCollectionNavigationStore(state => Boolean(state.snapshot?.stack.length));

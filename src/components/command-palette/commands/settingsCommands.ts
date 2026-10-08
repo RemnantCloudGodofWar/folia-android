@@ -6,10 +6,11 @@ import type { CommandPaletteCommand } from '../types';
 import { createToggleCommand, createAppLanguageCommand, createSettingsCommand, createSettingsAnchorCommand, defineCommand } from '../commandFactories';
 import { sleepTimerCommand } from './sleepTimerCommand';
 import { lyricExportCommands } from './lyricExportCommands';
-import { Gauge, Images, Layers3 } from 'lucide-react';
+import { Gauge, Images, Layers3, Library } from 'lucide-react';
 import { latticePosterTintSurface } from '../surfaces/latticePosterTintSurface';
 import { gridViewCardsSurface } from '../surfaces/gridViewCardsSurface';
 import { reduceMotionSurface } from '../surfaces/reduceMotionSurface';
+import { librarySuitePickerSurface } from '../surfaces/librarySuitePickerSurface';
 import { openCurrentPagePonder } from '../../../services/ponder/pagePonderTarget';
 
 // src/components/command-palette/commands/settingsCommands.ts
@@ -71,6 +72,29 @@ export const settingsCommands: CommandPaletteCommand[] = [
             return true;
         },
     },
+    // 资料库界面（Library UI suite）：锚点跳到界面设置里的那一节，picker 直接切换。两条都只在可用的 suite 不止一套时出现，
+    // 与设置节用同一个判断（hasLibrarySuiteChoice，经 context 透出）。
+    createSettingsAnchorCommand(
+        'settings-library-suite',
+        'Library interface',
+        'Jump to which interface the library uses',
+        ['library ui', 'library suite', 'library view', '资料库界面', '集合界面', '界面套件'],
+        'librarySuite',
+        { isAvailable: context => context?.settings.canChooseLibrarySuite() ?? true },
+    ),
+    defineCommand({
+        id: 'library-suite-picker',
+        group: 'settings',
+        title: 'Pick a library interface',
+        description: 'Switch the interface the library is browsed in',
+        keywords: ['library ui picker', 'switch library suite', 'library suite', '切换资料库界面', '选择资料库界面'],
+        icon: Library,
+        isAvailable: context => context?.settings.canChooseLibrarySuite() ?? true,
+        requiresInput: true,
+        surface: librarySuitePickerSurface,
+        placeholder: context => context.shared.t('commandPalette.pickerFilterPlaceholder', 'Type to filter, then click or press Enter'),
+        execute: () => false,
+    }),
     createSettingsAnchorCommand('settings-pinned-commands', 'Pinned command slots', 'Choose the three commands pinned in the palette', ['pinned commands', 'quick slots', '固定命令'], 'pinnedCommands'),
     createSettingsCommand('settings-interaction', 'Interaction settings', 'Open keyboard, shortcut and grid interaction settings', ['interaction', 'keyboard', 'hotkey', '交互', '快捷键设置'], 'options', 'interaction'),
     createSettingsAnchorCommand('settings-custom-shortcut', 'Custom shortcuts', 'Jump to the custom keyboard shortcut bindings', ['keybinding', 'rebind', 'hotkey', '自定义快捷键'], 'customShortcut'),

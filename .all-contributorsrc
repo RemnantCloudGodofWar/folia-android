@@ -615,7 +615,8 @@
       "avatar_url": "https://avatars.githubusercontent.com/u/78797866?v=4",
       "profile": "https://github.com/HZDavy",
       "contributions": [
-        "bug"
+        "bug",
+        "code"
       ]
     },
     {
@@ -686,6 +687,15 @@
       "name": "Fons",
       "avatar_url": "https://avatars.githubusercontent.com/u/190753033?v=4",
       "profile": "http://fonstage.space",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "tabidachinokaze",
+      "name": "旅立ちの風",
+      "avatar_url": "https://avatars.githubusercontent.com/u/36873309?v=4",
+      "profile": "https://github.com/tabidachinokaze",
       "contributions": [
         "code"
       ]

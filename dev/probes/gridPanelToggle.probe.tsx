@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import '../../src/i18n/config';
-import GridPanelToggleIndicator from '../../src/components/folia-grid/GridPanelToggleIndicator';
+import GridPanelToggleIndicator from '../../src/library/suites/grid/shared/GridPanelToggleIndicator';
 import type { ProbeDefinition } from './definition';
 // dev/probes/gridPanelToggle.probe.tsx
 

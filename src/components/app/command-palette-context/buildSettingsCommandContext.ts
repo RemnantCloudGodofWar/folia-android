@@ -12,6 +12,8 @@ import { useGridViewSettingsStore } from '../../../stores/useGridViewSettingsSto
 import { useLatticeSettingsStore } from '../../../stores/useLatticeSettingsStore';
 import { useMotionSettingsStore } from '../../../stores/useMotionSettingsStore';
 import { usePlaybackEntryViewStore } from '../../../stores/usePlaybackEntryViewStore';
+import { hasLibrarySuiteChoice } from '../../../library/registry';
+import { chooseLibrarySuite, getActiveLibrarySuiteId, listLibrarySuiteOptions } from '../../../library/app/librarySuiteChoice';
 import { usePonderStore } from '../../../stores/usePonderStore';
 import { useHomeLayoutSettingsStore } from '../../../stores/useHomeLayoutSettingsStore';
 import { usePlayerChromeSettingsStore } from '../../../stores/usePlayerChromeSettingsStore';
@@ -82,6 +84,10 @@ export const buildSettingsCommandContext = (
         ),
         playbackEntryView: entryView.playbackEntryView,
         setPlaybackEntryView: entryView.setPlaybackEntryView,
+        librarySuiteOptions: listLibrarySuiteOptions,
+        activeLibrarySuite: getActiveLibrarySuiteId,
+        canChooseLibrarySuite: hasLibrarySuiteChoice,
+        chooseLibrarySuite,
         ponderHintVisibility: ponder.ponderHintVisibility,
         setPonderHintVisibility: ponder.setPonderHintVisibility,
         togglePonderTouchButton: () => {

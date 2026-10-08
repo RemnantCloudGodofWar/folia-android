@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { OnlineProviderId } from '../types/onlineMusic';
-import type { OnlineProviderPlatformState } from './useOnlineProviderPlatform';
+import type { OnlineProviderId, ProviderAccountSummary } from '../types/onlineMusic';
 import { useOnlineProviderAccountStore } from '../stores/useOnlineProviderAccountStore';
 import { useCollectionNavigationStore } from '../stores/useCollectionNavigationStore';
 import { useAppViewStore } from '../stores/useAppViewStore';
@@ -19,14 +18,18 @@ import { setStatusMessage } from '../stores/useStatusMessageStore';
 const HOME_PROVIDER_REFRESH_COOLDOWN_MS = 5_000;
 
 type HomeProviderRefreshParams = {
-    onlineProviderPlatform: OnlineProviderPlatformState;
+    /** 当前在线平台（账户 controller 快照里已回落过的那个）。 */
+    activeProviderId: OnlineProviderId;
+    /** 当前平台账户摘要的新鲜度；正在刷新时不再叠一次。 */
+    activeProviderFreshness: ProviderAccountSummary['freshness'] | undefined;
     refreshActiveProviderPlaylists: () => Promise<unknown>;
     /** Kugou is the one provider whose failure can mean an expired login worth telling the user about. */
     checkKugouLoginStatus: () => Promise<unknown>;
 };
 
 export const useHomeProviderRefresh = ({
-    onlineProviderPlatform,
+    activeProviderId,
+    activeProviderFreshness,
     refreshActiveProviderPlaylists,
     checkKugouLoginStatus,
 }: HomeProviderRefreshParams) => {
@@ -39,11 +42,11 @@ export const useHomeProviderRefresh = ({
     useEffect(() => {
         if (currentView !== 'home' || hasCollection) return;
 
-        const providerId = onlineProviderPlatform.activeProviderId;
+        const providerId = activeProviderId;
         const startedAt = Date.now();
         const previous = lastHomeProviderRefreshRef.current;
         if (previous?.providerId === providerId && startedAt - previous.at <= HOME_PROVIDER_REFRESH_COOLDOWN_MS) return;
-        if (onlineProviderPlatform.activeProvider?.freshness === 'refreshing') {
+        if (activeProviderFreshness === 'refreshing') {
             lastHomeProviderRefreshRef.current = { providerId, at: startedAt };
             return;
         }
@@ -71,8 +74,8 @@ export const useHomeProviderRefresh = ({
         checkKugouLoginStatus,
         currentView,
         hasCollection,
-        onlineProviderPlatform.activeProvider?.freshness,
-        onlineProviderPlatform.activeProviderId,
+        activeProviderFreshness,
+        activeProviderId,
         refreshActiveProviderPlaylists,
         t,
     ]);

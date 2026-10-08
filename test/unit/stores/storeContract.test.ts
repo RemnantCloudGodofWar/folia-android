@@ -16,9 +16,23 @@ import { describe, expect, it } from 'vitest';
 // Written against the source text rather than by importing the stores: several of them pull the
 // visualizer registry, which is deliberately kept out of node-environment tests.
 
-const STORES_DIR = path.resolve(__dirname, '../../../src/stores');
-const storeFiles = readdirSync(STORES_DIR).filter(name => name.endsWith('.ts'));
-const readStore = (name: string) => readFileSync(path.join(STORES_DIR, name), 'utf8');
+// Stores live flat in two places: src/stores and the library core's state layer. Every check below
+// covers both; a store is named by its file name, which is unique across the two directories.
+const REPO_ROOT = path.resolve(__dirname, '../../..');
+const STORE_DIRS = ['src/stores', 'src/library/core/state'];
+const storeDirOf = new Map<string, string>();
+for (const dir of STORE_DIRS) {
+    for (const name of readdirSync(path.join(REPO_ROOT, dir)).filter(entry => entry.endsWith('.ts'))) {
+        storeDirOf.set(name, dir);
+    }
+}
+const storeFiles = [...storeDirOf.keys()];
+const readStore = (name: string) => readFileSync(path.join(REPO_ROOT, storeDirOf.get(name)!, name), 'utf8');
+/** The stores one store imports (by id), whichever of the two directories either of them lives in. */
+const storeImportsOf = (name: string, statement: RegExp) => [...readStore(name).matchAll(statement)]
+    .map(match => path.posix.normalize(path.posix.join(storeDirOf.get(name)!, match[1])))
+    .filter(target => storeDirOf.get(`${path.posix.basename(target)}.ts`) === path.posix.dirname(target))
+    .map(target => path.posix.basename(target));
 
 describe('store contract', () => {
     it('keeps every localStorage key the stores read or write', () => {
@@ -42,7 +56,7 @@ describe('store contract', () => {
         const graph = new Map<string, string[]>();
         for (const name of storeFiles) {
             const id = name.replace(/\.ts$/, '');
-            const deps = [...readStore(name).matchAll(/from '\.\/(\w+)'/g)].map(match => match[1]);
+            const deps = storeImportsOf(name, /from '(\.{1,2}\/[\w./]+)'/g);
             graph.set(id, deps);
         }
 
@@ -94,8 +108,7 @@ describe('store contract', () => {
         for (const name of storeFiles) {
             const from = name.replace(/\.ts$/, '');
             if (INFRASTRUCTURE.has(from)) continue;
-            for (const match of readStore(name).matchAll(/^import [^;]*from '\.\/(\w+)';$/gm)) {
-                const to = match[1];
+            for (const to of storeImportsOf(name, /^import [^;]*from '(\.{1,2}\/[\w./]+)';$/gm)) {
                 if (INFRASTRUCTURE.has(to) || ALLOWED[from]?.includes(to)) continue;
                 edges.push(`${from} -> ${to}`);
             }
@@ -111,7 +124,9 @@ describe('store contract', () => {
         //   quietly runs the real store instead of the fixture it thinks it installed
         // Splitting a store leaves both behind. This is the only thing that reports it.
         const ROOTS = ['src', 'test', 'dev'].map(dir => path.resolve(__dirname, '../../..', dir));
-        const known = new Set(storeFiles.map(name => name.replace(/\.ts$/, '')));
+        const knownIn = (dir: string) => new Set(storeFiles
+            .filter(name => storeDirOf.get(name) === dir)
+            .map(name => name.replace(/\.ts$/, '')));
         const walk = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap(entry => {
             const full = path.join(dir, entry.name);
             if (entry.isDirectory()) return entry.name === 'node_modules' ? [] : walk(full);
@@ -121,14 +136,20 @@ describe('store contract', () => {
         const dangling: string[] = [];
         for (const file of ROOTS.flatMap(walk)) {
             const source = readFileSync(file, 'utf8');
-            const named = [
-                ...source.matchAll(/['"]\/src\/stores\/(\w+)\.ts['"]/g),
-                ...source.matchAll(/['"]@\/stores\/(\w+)['"]/g),
-                ...source.matchAll(/\bsrc\/stores\/(\w+)\.ts\b/g),
-            ].map(match => match[1]);
-            for (const name of new Set(named)) {
-                if (!known.has(name)) {
-                    dangling.push(`${path.relative(path.resolve(__dirname, '../../..'), file)} -> ${name}`);
+            for (const dir of STORE_DIRS) {
+                // The three spellings above (runtime path, alias, bare path), for each store directory.
+                const known = knownIn(dir);
+                const full = dir.replace(/\//g, '\\/');
+                const alias = dir.replace(/^src\//, '').replace(/\//g, '\\/');
+                const named = [
+                    ...source.matchAll(new RegExp(`['"]\\/${full}\\/(\\w+)\\.ts['"]`, 'g')),
+                    ...source.matchAll(new RegExp(`['"]@\\/${alias}\\/(\\w+)['"]`, 'g')),
+                    ...source.matchAll(new RegExp(`\\b${full}\\/(\\w+)\\.ts\\b`, 'g')),
+                ].map(match => match[1]);
+                for (const name of new Set(named)) {
+                    if (!known.has(name)) {
+                        dangling.push(`${path.relative(REPO_ROOT, file)} -> ${dir}/${name}`);
+                    }
                 }
             }
         }

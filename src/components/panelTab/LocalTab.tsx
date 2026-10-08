@@ -1,16 +1,18 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { UnifiedSong, ReplayGainMode } from '../../types';
-import { FileAudio, RefreshCw, FileText } from 'lucide-react';
+import { FileAudio, RefreshCw, FileText, TriangleAlert } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import LyricTimelineOffsetControl from './LyricTimelineOffsetControl';
 import LyricFileButton from './LyricFileButton';
 import { getLyricProviderLabel } from '../../utils/lyrics/lyricSourceLabels';
+import { detectLyricFileIssues } from '../../utils/lyrics/lyricFileIssues';
 import { getLocalSongs } from '../../services/db';
 import type { LocalSong } from '../../types';
 import { isLocalPlaybackSong } from '../../utils/appPlaybackGuards';
 import ReplayGainControl from './ReplayGainControl';
 import { usePlaybackStore } from '../../stores/usePlaybackStore';
+import { readLyricFile } from '../../utils/lyrics/lyricFileDecoding';
 
 interface LocalTabProps {
     currentSong: UnifiedSong;
@@ -79,14 +81,13 @@ const LocalTab: React.FC<LocalTabProps> = ({
         const file = e.target.files?.[0];
         if (!file) return;
 
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            const content = event.target?.result as string;
+        void readLyricFile(file).then((content) => {
             if (content) {
                 onUpdateLocalLyrics(content, isTranslation, file.name);
             }
-        };
-        reader.readAsText(file);
+        }).catch((error) => {
+            console.error(`[LocalTab] Failed to read lyric file ${file.name}`, error);
+        });
 
         // Reset input
         e.target.value = '';
@@ -120,6 +121,10 @@ const LocalTab: React.FC<LocalTabProps> = ({
         }
         return states.length > 0 ? states.join(' / ') : t('localMusic.statusNone');
     }, [localData, t]);
+    const localLyricFileIssues = useMemo(
+        () => detectLyricFileIssues(localData?.localLyricsContent, localData?.localLyricsFormat),
+        [localData?.localLyricsContent, localData?.localLyricsFormat]
+    );
     if (!isLocalSong) {
         return <div className="min-h-96" aria-hidden="true" />;
     }
@@ -223,6 +228,22 @@ const LocalTab: React.FC<LocalTabProps> = ({
                                 {source.label}
                             </button>
                         ))}
+                    </div>
+                )}
+
+                {activeSource === 'local' && localLyricFileIssues.includes('translation-shifted-to-end-time') && (
+                    <div
+                        role="alert"
+                        className={`space-y-1.5 rounded-lg px-3 py-2.5 text-xs leading-relaxed ${
+                            isDaylight ? 'bg-amber-500/15 text-amber-800' : 'bg-amber-400/10 text-amber-200'
+                        }`}
+                    >
+                        <div className="flex items-center gap-1.5 font-semibold">
+                            <TriangleAlert size={13} className="shrink-0" />
+                            {t('localMusic.lyricFileIssueShiftedTitle')}
+                        </div>
+                        <p className="opacity-90">{t('localMusic.lyricFileIssueShiftedBody')}</p>
+                        <p className="opacity-90">{t('localMusic.lyricFileIssueShiftedFix')}</p>
                     </div>
                 )}
 

@@ -6,29 +6,37 @@ import { assertExecuteShortcutsArePrefixFree } from '../../../src/components/com
 import en from '../../../src/i18n/locales/en';
 import zhCN from '../../../src/i18n/locales/zh-CN';
 import id from '../../../src/i18n/locales/in';
+import { buildSuiteChromeCommands } from '../../../src/components/command-palette/commands/suiteChromeCommands';
+import { listLibrarySuites } from '../../../src/library/registry';
+import { findKeywordOffenders, findUntranslatedCommands, listStaticCommands } from './commandContractChecks';
 
 // test/unit/command-palette/commandRegistryContract.test.ts
 // Guards the registry invariants a refactor must not silently break: id set, landing-list
 // order, and per-command translation coverage across every shipped locale.
+// B2: the library suites' chrome actions (manifest `chromeActions`) are commands too, but they are
+// installed into the list at app startup rather than declared statically, so the contract enumerates
+// them itself from the registry. No shipped suite declares any yet; the same checks run over a fixture
+// suite in suiteChromeCommands.test.ts.
 
 const LOCALES = { en, 'zh-CN': zhCN, in: id } as const;
+
+// The chrome commands every available suite declares, built the way the app installs them
+// (library/app/installLibrarySuiteChromeCommands), checked alongside the static list.
+const SUITE_CHROME_COMMANDS = buildSuiteChromeCommands(listLibrarySuites());
+const CONTRACT_COMMANDS = [
+    ...COMMAND_PALETTE_COMMANDS.filter(command => command.scope !== 'suite-chrome'),
+    ...SUITE_CHROME_COMMANDS,
+];
 
 // Static commands resolve their text through commandPalette.commands.<id>. Runtime commands
 // (queue songs) carry song metadata and must never be treated as translation keys; hidden
 // commands (mode carriers such as execute mode) are never listed, so they need neither.
-const staticCommands = COMMAND_PALETTE_COMMANDS.filter(
-    command => command.textSource !== 'runtime' && !command.hidden,
-);
-
-const readCommandText = (locale: (typeof LOCALES)[keyof typeof LOCALES], commandId: string) => {
-    const commands = (locale as any).commandPalette?.commands as Record<string, { title?: string; description?: string }> | undefined;
-    return commands?.[commandId];
-};
+const staticCommands = listStaticCommands(CONTRACT_COMMANDS);
 
 describe('command palette registry contract', () => {
     it('keeps command ids unique', () => {
         const seen = new Map<string, number>();
-        COMMAND_PALETTE_COMMANDS.forEach(command => {
+        CONTRACT_COMMANDS.forEach(command => {
             seen.set(command.id, (seen.get(command.id) ?? 0) + 1);
         });
 
@@ -39,20 +47,21 @@ describe('command palette registry contract', () => {
         expect(COMMAND_PALETTE_COMMANDS.map(command => command.id)).toMatchSnapshot();
     });
 
+    it('enumerates the chrome actions the available suites declare (none yet: grid and TUI declare none)', () => {
+        // B6 起 bravais 进 registry，这里列出它在 manifest 里声明的外观动作（`bravais-<动作 id>`）。
+        expect(SUITE_CHROME_COMMANDS.map(command => command.id)).toEqual([]);
+        expect(staticCommands).toEqual(expect.arrayContaining(SUITE_CHROME_COMMANDS));
+    });
+
     it.each(Object.keys(LOCALES))('translates every static command in %s', localeName => {
         const locale = LOCALES[localeName as keyof typeof LOCALES];
-        const missing = staticCommands
-            .filter(command => {
-                const text = readCommandText(locale, command.id);
-                return !text?.title || !text?.description;
-            })
-            .map(command => command.id);
+        const missing = findUntranslatedCommands(CONTRACT_COMMANDS, locale);
 
         expect(missing).toEqual([]);
     });
 
     it('keeps coexisting execute shortcuts unique and prefix-free', () => {
-        expect(() => assertExecuteShortcutsArePrefixFree(COMMAND_PALETTE_COMMANDS)).not.toThrow();
+        expect(() => assertExecuteShortcutsArePrefixFree(CONTRACT_COMMANDS)).not.toThrow();
     });
 
     it('withholds execute shortcuts from irreversible commands', () => {
@@ -80,50 +89,9 @@ describe('command palette registry contract', () => {
 
     it('keeps keywords free of generated pinyin and of title restatements', () => {
         // 迁移从此自我保持：谁再往 keywords 里手写一份能被生成出来的拼音，这条就会红。
-        const offenders: string[] = [];
-
-        staticCommands.forEach(command => {
-            const zh = readCommandText(zhCN, command.id);
-            const cjkSources = [
-                ...command.keywords.filter(keyword => /[一-鿿]/.test(keyword)),
-                zh?.title,
-                zh?.description,
-            ].filter((value): value is string => Boolean(value));
-
-            const derived = new Set<string>();
-            cjkSources.forEach(source => {
-                const entry = PINYIN_BY_PHRASE[source];
-                if (entry) {
-                    derived.add(entry.full);
-                    derived.add(entry.initials);
-                }
-            });
-
-            const localizedText = new Set(
-                Object.values(LOCALES)
-                    .flatMap(locale => {
-                        const text = readCommandText(locale, command.id);
-                        return [text?.title, text?.description];
-                    })
-                    .filter((value): value is string => Boolean(value))
-                    .map(value => value.trim().toLowerCase()),
-            );
-
-            command.keywords.forEach(keyword => {
-                const normalized = keyword.trim().toLowerCase();
-                if (derived.has(normalized.replace(/\s+/g, ''))) {
-                    offenders.push(`${command.id}: "${keyword}" is generated pinyin`);
-                    return;
-                }
-                // 「照抄标题」只对纯 ASCII 关键词成立。中文关键词即使和 zh 标题逐字相同也不冗余：
-                // zh 标题只在中文界面下进语料，而中文关键词在任何界面语言下都是触发词——
-                // 删了它，英文界面就再也打不出 `音量条` 这种词。
-                const isAsciiKeyword = /^[\x20-\x7e]+$/.test(keyword);
-                if (isAsciiKeyword && localizedText.has(normalized)) {
-                    offenders.push(`${command.id}: "${keyword}" restates a localized title`);
-                }
-            });
-        });
+        // 规则本体（含「照抄标题只对纯 ASCII 关键词成立」的理由）搬到了 commandContractChecks 的
+        // findKeywordOffenders，好让外观动作的夹具跑同一套检查。
+        const offenders = findKeywordOffenders(CONTRACT_COMMANDS, LOCALES, zhCN, PINYIN_BY_PHRASE);
 
         expect(offenders).toEqual([]);
     });
@@ -153,7 +121,7 @@ describe('command palette registry contract', () => {
     it('gives every static command a non-empty primary term', () => {
         // UI 上那个等宽提示 chip 和「全部命令」的点击回填都读它；空串会渲染出一个空徽章。
         const empty = staticCommands
-            .filter(command => !getCommandPrimaryTerm(COMMAND_PALETTE_COMMANDS, command))
+            .filter(command => !getCommandPrimaryTerm(CONTRACT_COMMANDS, command))
             .map(command => command.id);
 
         expect(empty).toEqual([]);

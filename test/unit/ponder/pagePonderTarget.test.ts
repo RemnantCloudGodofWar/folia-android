@@ -1,13 +1,28 @@
-import { afterEach, describe, expect, it } from 'vitest';
-import { openCurrentPagePonder, openSettingsFromPonder, resolvePagePonderTarget } from '@/services/ponder/pagePonderTarget';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { openCurrentPagePonder, openSettingsFromPonder, readCurrentPagePonderTarget, readVisiblePagePonderScope, resolvePagePonderTarget } from '@/services/ponder/pagePonderTarget';
 import { useAppViewStore } from '@/stores/useAppViewStore';
 import { usePonderStore } from '@/stores/usePonderStore';
 import { useSettingsModalStore } from '@/stores/useSettingsModalStore';
 
 // test/unit/ponder/pagePonderTarget.test.ts
 
+/** Minimal visible DOM scopes; no renderer registry or UI import is needed by the resolver. */
+const mountScopes = (scopes: { id: string; hidden?: boolean; width?: number }[]) => {
+    vi.stubGlobal('document', {
+        querySelectorAll: () => scopes.map(scope => ({
+            dataset: { ponderPageScope: scope.id },
+            hidden: scope.hidden,
+            getBoundingClientRect: () => ({ width: scope.width ?? 100, height: 100 }),
+        })),
+    });
+    vi.stubGlobal('window', {
+        getComputedStyle: (element: { hidden?: boolean }) => ({ display: element.hidden ? 'none' : 'block', visibility: 'visible' }),
+    });
+};
+
 describe('resolvePagePonderTarget', () => {
     afterEach(() => {
+        vi.unstubAllGlobals();
         useAppViewStore.setState({ view: 'home' });
         usePonderStore.getState().closePonder();
         usePonderStore.getState().closeNavigation();
@@ -33,6 +48,41 @@ describe('resolvePagePonderTarget', () => {
 
     it('ignores an unknown page scope', () => {
         expect(resolvePagePonderTarget('player', 'not-a-ponder-target')).toBe('player-page');
+    });
+
+    it('distinguishes explicit no target from missing and unknown scopes', () => {
+        expect(resolvePagePonderTarget('home', 'none')).toBeNull();
+        expect(resolvePagePonderTarget('home', null)).toBe('grid-page');
+        expect(resolvePagePonderTarget('home', '')).toBe('grid-page');
+        expect(resolvePagePonderTarget('home', 'unknown')).toBe('grid-page');
+    });
+
+    it('a visible no-target page overrides the underlying grid without opening a session', () => {
+        mountScopes([{ id: 'grid-page' }, { id: 'none' }]);
+        expect(readVisiblePagePonderScope()).toBe('none');
+        expect(readCurrentPagePonderTarget()).toBeNull();
+        expect(openCurrentPagePonder()).toBeNull();
+        expect(usePonderStore.getState().session).toBeNull();
+    });
+
+    it.each(['settings-page', 'help-page'] as const)('%s still overrides a no-target page', target => {
+        mountScopes([{ id: 'none' }, { id: target }]);
+        expect(openCurrentPagePonder()).toBe(target);
+        expect(usePonderStore.getState().session?.targetId).toBe(target);
+    });
+
+    it('ignores unknown, hidden and zero-size scopes above the current page', () => {
+        mountScopes([{ id: 'grid-view-page' }, { id: 'none', hidden: true }, { id: 'none', width: 0 }, { id: 'unknown' }]);
+        expect(readVisiblePagePonderScope()).toBe('grid-view-page');
+        expect(readCurrentPagePonderTarget()).toBe('grid-view-page');
+    });
+
+    it('the first UserGuide keeps overview feedback and entry above a no-target page', () => {
+        mountScopes([{ id: 'none' }]);
+        useSettingsModalStore.getState().setIsUserGuideModalOpen(true);
+        expect(readCurrentPagePonderTarget()).toBe('help-page');
+        expect(openCurrentPagePonder()).toBe('help-page');
+        expect(useSettingsModalStore.getState().isUserGuideModalOpen).toBe(false);
     });
 
     it('opens the active page target', () => {

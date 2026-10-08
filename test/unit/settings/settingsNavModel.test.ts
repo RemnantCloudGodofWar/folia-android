@@ -50,11 +50,22 @@ describe('settingsNavModel', () => {
     });
 
     it('expands every declared anchor under its owning section', () => {
-        const items = flattenSettingsNavItems(buildSettingsNavGroups(echo, { isElectron: true }));
+        const items = flattenSettingsNavItems(buildSettingsNavGroups(echo, { isElectron: true, hasLibrarySuiteChoice: true }));
         const rendered = items.flatMap(item => item.anchors.map(anchor => [anchor.id, item.id]));
         const declared = Object.entries(SETTINGS_ANCHOR_DEFINITIONS).map(([id, definition]) => [id, definition.section]);
 
         expect(rendered).toEqual(declared);
+    });
+
+    it('lists the library suite anchor only when there is a suite to choose (its section renders nothing otherwise)', () => {
+        const anchorsOf = (hasLibrarySuiteChoice: boolean) => findSettingsNavItem(
+            buildSettingsNavGroups(echo, { isElectron: false, hasLibrarySuiteChoice }),
+            'general',
+        )?.anchors.map(anchor => anchor.id);
+
+        expect(anchorsOf(true)).toContain('librarySuite');
+        expect(anchorsOf(false)).not.toContain('librarySuite');
+        expect(anchorsOf(false)).toContain('playbackEntryView');
     });
 
     it.each([['en', en], ['zh-CN', zhCN], ['in', id]] as const)('has every label and description key in %s', (_name, bundle) => {

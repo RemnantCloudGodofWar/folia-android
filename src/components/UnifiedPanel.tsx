@@ -5,6 +5,7 @@ import { Settings, Settings2, X, Disc, SlidersHorizontal, ListMusic, User as Use
 import { useTranslation } from 'react-i18next';
 import { Album, Artist, SongResult, Theme, PlayerState, ReplayGainMode, ThemeMode, VisualizerMode } from '../types';
 import type { ProviderUser } from '../types/onlineMusic';
+import type { LibraryAccountController } from '../library/core/contracts/account';
 import CoverTab from './panelTab/CoverTab';
 import ControlsTab from './panelTab/ControlsTab';
 import QueueTab from './panelTab/QueueTab';
@@ -111,7 +112,7 @@ type UnifiedPanelQueueProps = {
 
 type UnifiedPanelAccountProps = {
     user: ProviderUser | null;
-    onLogout: () => void;
+    accountController: LibraryAccountController;
     audioQuality: AudioQualityPreference;
     onAudioQualityChange: (quality: AudioQualityPreference) => void;
     cacheSize: string;
@@ -224,7 +225,7 @@ const UnifiedPanel: React.FC<UnifiedPanelProps> = ({
     } = library;
     const {
         user,
-        onLogout,
+        accountController,
         audioQuality,
         onAudioQualityChange,
         cacheSize,
@@ -893,7 +894,7 @@ const UnifiedPanel: React.FC<UnifiedPanelProps> = ({
                                     {currentTab === 'account' && (
                                         <AccountTab
                                             user={user}
-                                            onLogout={onLogout}
+                                            accountController={accountController}
                                             audioQuality={audioQuality}
                                             onAudioQualityChange={onAudioQualityChange}
                                             cacheSize={cacheSize}

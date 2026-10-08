@@ -75,3 +75,26 @@ test('the entrance animation is not what eats the main thread', async ({ mount, 
     expect(withEntrance.longTaskMax).toBeLessThan(withoutEntrance.longTaskMax + 120);
     expect(withEntrance.slowFrames).toBeLessThan(withoutEntrance.slowFrames + 6);
 });
+
+test('paging the rest of a big playlist in the background does not cost frames', async ({ mount, page }) => {
+    const root = await mount('gridEntrancePerf');
+    await warmUp(page, root);
+    const setPaging = async (on: boolean) => {
+        if ((await root.locator('[data-probe-paging]').getAttribute('data-probe-paging')) !== (on ? 'on' : 'off')) {
+            await root.locator('[data-probe-paging]').click();
+        }
+    };
+
+    await setPaging(false);
+    const atOnce = await openAndMeasure(page, root, 5000);
+    await setPaging(true);
+    const paged = await openAndMeasure(page, root, 5000);
+    // eslint-disable-next-line no-console
+    console.log('PERF paging', JSON.stringify({ atOnce, paged }));
+
+    // 分页按后台更新提交（transition），每页重算网格项也只塑形视口附近的卡：五次整表更新落在测量窗口里，
+    // 主线程块与掉帧都不该比「一次给全」明显变多。同样比差值，不比绝对值。
+    expect(paged.longTaskMax - atOnce.longTaskMax).toBeLessThan(150);
+    expect(paged.slowFrames - atOnce.slowFrames).toBeLessThan(6);
+    expect(paged.cards).toBeLessThan(atOnce.cards * 1.5 + 10);
+});

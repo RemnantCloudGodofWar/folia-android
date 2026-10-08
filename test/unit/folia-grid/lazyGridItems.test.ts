@@ -1,14 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
-    buildDuplicateOccurrences,
     createLazyGridItems,
     shapeGridItem,
-    type DuplicateOccurrenceCache,
-} from '@/components/folia-grid/lazyGridItems';
+} from '@/library/suites/grid/collection/lazyGridItems';
+import { buildDuplicateOccurrences, type DuplicateOccurrenceCache } from '@/library/core/model/collectionEntries';
 import { getPlaybackSongKey } from '@/utils/appPlaybackGuards';
 import { formatSongName } from '@/utils/songNameFormatter';
 import { getSongCoverUrl } from '@/services/onlineMusic/songMetadata';
-import type { GridItem } from '@/components/folia-grid/polaroidCardParts';
+import type { GridItem } from '@/library/suites/grid/shared/polaroidCardParts';
 import type { SongResult } from '@/types';
 
 // test/unit/folia-grid/lazyGridItems.test.ts

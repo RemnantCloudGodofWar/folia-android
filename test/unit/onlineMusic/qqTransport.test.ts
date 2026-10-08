@@ -8,6 +8,35 @@ const storage = new Map<string, string>();
 const CONFIRMED_COOKIE = 'qqmusic_session=opaque-token';
 
 describe('QQ Music Web transport', () => {
+    it.each([401, 404, 429, 502])('keeps HTTP %s separate from the backend body code', async (status) => {
+        vi.stubGlobal('fetch', vi.fn(async () => Response.json({ code: 123, token: 'private-token' }, { status })));
+        const { requestQq } = await import('@/services/onlineMusic/qqTransport');
+        await expect(requestQq('login_qr_key')).rejects.toMatchObject({ httpStatus: status, cause: { code: 123 } });
+    });
+    // httpStatus 是 OnlineProviderError 自己的可选字段：构造时传入，别的 provider 不传就是 undefined。
+    it('takes the HTTP status through the OnlineProviderError constructor', async () => {
+        const { OnlineProviderError } = await import('@/types/onlineMusic');
+        const error = new OnlineProviderError('network', 'request failed', 'qq', { code: 123 }, 502);
+        expect(error.httpStatus).toBe(502);
+        expect(error.cause).toEqual({ code: 123 });
+        expect(new OnlineProviderError('network', 'request failed', 'kugou').httpStatus).toBeUndefined();
+    });
+    // 429 退避的冷却时长交给调用方（core 的登录会话据此暂缓重试）：响应体的 retryAfterMs 优先，没有时读 Retry-After 秒数。
+    it.each([
+        ['the body', { code: 429, retryAfterMs: 24_999 }, {}, 24_999],
+        ['the Retry-After header', { code: 429 }, { 'Retry-After': '25' }, 25_000],
+        ['nowhere', { code: 429 }, {}, undefined],
+        ['a malformed header', { code: 429 }, { 'Retry-After': 'soon' }, undefined],
+    ])('reads the backend cooldown of a rejected request from %s', async (_source, body, headers, expected) => {
+        vi.stubGlobal('fetch', vi.fn(async () => Response.json(body, { status: 429, headers })));
+        const { requestQq } = await import('@/services/onlineMusic/qqTransport');
+        const error = await requestQq('login_qr_key').then(
+            () => null,
+            (failure: unknown) => failure as { httpStatus?: number; retryAfterMs?: number },
+        );
+        expect(error).toMatchObject({ httpStatus: 429 });
+        expect(error?.retryAfterMs).toBe(expected);
+    });
     beforeEach(() => {
         vi.resetModules();
         storage.clear();
@@ -428,17 +457,42 @@ describe('QQ Music Web transport', () => {
         expect(fetchMock).not.toHaveBeenCalled();
     });
 
-    it('keeps QR keys and session cookies out of error messages', async () => {
+    it('names the operation and the backend message, but never the session cookie', async () => {
         storage.set('online_provider:qq:cookie', 'qqmusic_session=secret-session-token');
-        const fetchMock = vi.fn().mockResolvedValue(Response.json({ code: 502 }, { status: 502 }));
+        const fetchMock = vi.fn().mockResolvedValue(Response.json(
+            { code: 429, message: 'QR login is temporarily backed off', retryAfterMs: 30000 },
+            { status: 429 },
+        ));
         vi.stubGlobal('fetch', fetchMock);
         const { requestQq } = await import('@/services/onlineMusic/qqTransport');
 
-        const error = await requestQq('login_qr_check', { key: 'secret-qr-key' }).catch((thrown: Error) => thrown);
+        const error = await requestQq('login_qr_key', { channel: 'qq' }).catch((thrown: Error) => thrown);
 
         expect(error).toBeInstanceOf(Error);
-        expect((error as Error).message).toBe('QQMusicApi request failed: 502');
-        expect((error as Error).message).not.toContain('secret-qr-key');
+        expect((error as Error).message).toBe('QQMusicApi login_qr_key failed: HTTP 429 (QR login is temporarily backed off)');
+        expect(error).toMatchObject({ httpStatus: 429, retryAfterMs: 30000 });
         expect((error as Error).message).not.toContain('secret-session-token');
+    });
+
+    it('tells an unreachable backend apart from a backend that answered with an error', async () => {
+        vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
+        const { requestQq } = await import('@/services/onlineMusic/qqTransport');
+
+        await expect(requestQq('login_qr_check', { key: 'k' })).rejects.toMatchObject({
+            code: 'network',
+            message: 'QQMusicApi login_qr_check unreachable: Failed to fetch',
+        });
+    });
+
+    it('says why the embedded server is not running', async () => {
+        vi.stubEnv('VITE_QQ_API_BASE', '');
+        const getQqApiStatus = vi.fn().mockResolvedValue({ status: 'error', port: null, error: 'listen: EADDRINUSE', updatedAt: 1 });
+        vi.stubGlobal('window', { electron: { getQqPort: vi.fn().mockResolvedValue(null), getQqApiStatus } });
+        const { requestQq } = await import('@/services/onlineMusic/qqTransport');
+
+        await expect(requestQq('login_qr_key')).rejects.toMatchObject({
+            code: 'unavailable',
+            message: 'Embedded QQMusicApi is not running (status error: listen: EADDRINUSE)',
+        });
     });
 });

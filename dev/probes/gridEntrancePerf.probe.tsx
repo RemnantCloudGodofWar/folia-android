@@ -1,6 +1,9 @@
 import React from 'react';
-import GridView from '../../src/components/GridView';
-import { useCollectionMorphStore } from '../../src/components/collectionOpenMorph/collectionMorphStore';
+import GridView from '../../src/library/suites/grid/collection/GridView';
+import { createStaticCollectionResource } from '../../src/library/core/services/staticCollectionResource';
+import type { CollectionResource } from '../../src/library/core/contracts/resource';
+import { createScriptedPagingResource } from './gridEntrancePerf/scriptedPagingResource';
+import { useCollectionMorphStore } from '../../src/library/suites/grid/transitions/collectionMorphStore';
 import type { ProbeDefinition } from './definition';
 // dev/probes/gridEntrancePerf.probe.tsx
 
@@ -58,14 +61,23 @@ const GridEntrancePerfProbe: React.FC = () => {
     const [entrance, setEntrance] = React.useState(true);
     const [running, setRunning] = React.useState(false);
     const [reading, setReading] = React.useState<PerfReading | null>(null);
+    // 分页模式：曲目像在线大歌单那样分页到达（见 scriptedPagingResource），量分页过程中的帧成本。
+    const [paging, setPaging] = React.useState(false);
+    const [pagingResource, setPagingResource] = React.useState<CollectionResource | null>(null);
     const tracks = React.useMemo(
         () => Array.from({ length: trackCount }, (_, index) => makeTrack(index)),
         [trackCount],
     );
+    // 曲目从静态资源来（不发请求），与真实宿主给网格的形态一致。
+    const staticResource = React.useMemo(() => createStaticCollectionResource('probe:perf', tracks), [tracks]);
+    const resource = paging ? pagingResource : staticResource;
+    React.useEffect(() => () => pagingResource?.dispose(), [pagingResource]);
 
     const start = () => {
         setReading(null);
         setRunning(false);
+        // 分页资源在每次打开时新建：分页从打开那一刻开始，正好落在测量窗口里。
+        setPagingResource(paging ? createScriptedPagingResource(`probe:paging:${runId + 1}`, tracks) : null);
         // 每次换 key 重新挂载，模拟一次「打开」
         setRunId(current => current + 1);
     };
@@ -146,6 +158,14 @@ const GridEntrancePerfProbe: React.FC = () => {
                 >
                     入场动画：{entrance ? '开' : '关（对照组）'}
                 </button>
+                <button
+                    type="button"
+                    data-probe-paging={paging ? 'on' : 'off'}
+                    className={buttonClass}
+                    onClick={() => { setPaging(current => !current); setReading(null); }}
+                >
+                    曲目到达：{paging ? '分页（150 + 每 100ms 1000 首）' : '一次给全'}
+                </button>
                 {[500, 2000, 5000].map(count => (
                     <button
                         key={count}
@@ -172,11 +192,12 @@ const GridEntrancePerfProbe: React.FC = () => {
                         title="Perf Playlist"
                         mode="tracks"
                         collection={PLAYLIST}
-                        externalTracks={tracks}
+                        resource={resource}
                         theme={THEME}
                         isDaylight={false}
                         isInteractive
                         onBack={() => {}}
+                        onDone={() => {}}
                         morphPlan={{ kind: 'morph' }}
                     />
                 ) : null}

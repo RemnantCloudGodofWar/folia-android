@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { useAppViewStore } from '../stores/useAppViewStore';
 import { usePonderStore } from '../stores/usePonderStore';
-import { openCurrentPagePonder, readVisiblePagePonderScope, resolvePagePonderTarget } from '../services/ponder/pagePonderTarget';
+import { effectiveKeyCode } from '../utils/keyboardTargets';
+import { openCurrentPagePonder, readCurrentPagePonderTarget } from '../services/ponder/pagePonderTarget';
 import type { PonderTargetId } from '../types/ponder';
 import { PONDER_HOLD_DURATION_MS, startPonderHoldProgress, type PonderHoldProgressRefs } from './ponderHoldProgress';
 
@@ -39,7 +39,7 @@ export const usePagePonderShortcut = (refs: PonderHoldProgressRefs): PagePonderS
 
         const handleKeyDown = (event: KeyboardEvent) => {
             if (
-                event.code !== 'KeyG'
+                effectiveKeyCode(event) !== 'KeyG'
                 || !event.ctrlKey
                 || event.altKey
                 || event.metaKey
@@ -58,19 +58,18 @@ export const usePagePonderShortcut = (refs: PonderHoldProgressRefs): PagePonderS
             if (event.repeat || heldRef.current) {
                 return;
             }
+            const nextTargetId = readCurrentPagePonderTarget();
+            setTargetId(nextTargetId);
+            if (nextTargetId === null) return;
             heldRef.current = true;
             // 提示一出现就把教程层那个 chunk 预热，400ms 按满时通常已经就绪。
             void import('../components/ponder/PonderStage');
-            setTargetId(resolvePagePonderTarget(
-                useAppViewStore.getState().view,
-                readVisiblePagePonderScope(),
-            ));
             setIsHolding(true);
         };
 
         const handleKeyUp = (event: KeyboardEvent) => {
             // 松开 G 或松开 Ctrl 都算放弃 —— 按住 G 再松 Ctrl 之后擦除还在走会很怪。
-            if (event.code === 'KeyG' || event.key === 'Control') {
+            if (effectiveKeyCode(event) === 'KeyG' || event.key === 'Control') {
                 stopHold();
             }
         };

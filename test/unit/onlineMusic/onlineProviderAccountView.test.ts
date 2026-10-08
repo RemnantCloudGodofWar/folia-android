@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canSwitchToProviderDirectly, resolveOnlineProviderAccountView } from '@/components/app/home/onlineProviderAccountView';
+import { canSwitchToProviderDirectly, resolveOnlineProviderAccountView } from '@/library/core/model/onlineProviderAccountView';
 import type { ProviderAccountSummary } from '@/types/onlineMusic';
 
 // test/unit/onlineMusic/onlineProviderAccountView.test.ts

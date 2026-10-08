@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createCollectionTrackSnapshot, readCollectionTrackSnapshot } from '../../../src/components/folia-grid/collectionTrackSnapshot';
+import { createCollectionTrackSnapshot, readCollectionTrackSnapshot } from '../../../src/library/core/services/collectionTrackSnapshot';
 
 // test/unit/gridView/collectionTrackSnapshot.test.ts
 

@@ -5,7 +5,7 @@ import type { PonderAnchorSource, PonderRelativeRect, PonderSceneScript, PonderT
 // 集合页信息面板底部那一列来源专属动作。
 //
 // 这一列的内容完全取决于打开的是什么集合：本地文件夹有重扫和整理 tag，本地歌单有导出，
-// 本地专辑/艺人有编辑实体 —— 判据见 gridSurfaceHandle.ts。
+// 本地专辑/艺人有编辑实体 —— 判据见 library/core/model/collectionSurface.ts。
 // 在线与 Navidrome 集合由 onlineCollectionActions target 单独说明，避免混淆来源能力。
 //
 // 最后那颗红的会删东西，而它和上面几颗只差一个颜色。

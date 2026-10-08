@@ -13,6 +13,7 @@ import { initFoliumClients } from './mods/folium/clientLoader';
 import { restoreSavedFoliumSelections } from './mods/folium/missingEntries';
 import { installFoliumCommandPaletteSync } from './mods/folium/commandPaletteSync';
 import { installFoliumHostEvents } from './mods/folium/hostEvents';
+import { installLibrarySuiteChromeCommands } from './library/app/installLibrarySuiteChromeCommands';
 import { installNativeDragGuard } from './utils/nativeDragGuard';
 import { isMainAppSurface, isObsBrowserSourceSurface, isRemoteControlSurface, obsSourceKind } from './utils/appSurface';
 // 副作用 import：store 在模块加载时就把 `<html data-reduce-motion>` 写好并保持同步。放在 bootstrap
@@ -64,6 +65,11 @@ const renderApp = () => root.render(
       </AppSplashGate>
     </React.StrictMode>
   );
+
+// Library suites declare their chrome actions in their manifests; the palette cannot import the
+// registry, so the commands are put into its list here, before anything renders (main window only,
+// like the mod commands below). A clashing execute shortcut throws here, at startup.
+if (isMainApp) installLibrarySuiteChromeCommands();
 
 const bootFolium = async () => {
     if (!isMainApp) return;

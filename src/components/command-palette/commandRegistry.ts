@@ -1,5 +1,6 @@
 import { ALL_COMMAND_PALETTE_COMMANDS } from './commands';
 import { matchesCommandPlatform, matchesCommandScope } from './availability';
+import { assertExecuteShortcutsArePrefixFree } from './executeShortcuts';
 import { getQueueSongMatches, getQueueSongMatchesFromEvaluation } from './queueSongMatches';
 import type { CommandPaletteCommand, CommandPaletteContext } from './types';
 
@@ -11,6 +12,38 @@ export { getQueueSongMatches, getQueueSongMatchesFromEvaluation };
 export { getCommandPaletteMatches, matchCommandsExactly, rankCommands } from './search/rankCommands';
 
 export const COMMAND_PALETTE_COMMANDS: CommandPaletteCommand[] = ALL_COMMAND_PALETTE_COMMANDS;
+
+// The suite chrome slice currently in the list (see setSuiteChromeCommands).
+let installedSuiteChromeCommands: readonly CommandPaletteCommand[] = [];
+
+/**
+ * Puts the library suites' chrome commands (B2, built by commands/suiteChromeCommands from the manifests'
+ * `chromeActions`) into the list, replacing whatever an earlier call put there — so a second call (HMR,
+ * tests) does not duplicate them.
+ *
+ * They cannot be part of the static list: the manifests live behind the library registry, which this
+ * module must not import. The app installs them once at startup (library/app/installLibrarySuiteChromeCommands),
+ * before anything renders. The static list's invariants are re-checked over the combined list here, the
+ * same way commands/index.ts checks them at module load: a duplicate id or an execute shortcut that is
+ * not prefix-free against everything it can be offered with throws, and the list is left as it was.
+ *
+ * Mutated in place rather than reassigned, because every consumer imported the array itself (mod
+ * commands are mirrored in the same way, see mods/folium/commandPaletteSync.ts).
+ */
+export const setSuiteChromeCommands = (commands: readonly CommandPaletteCommand[]) => {
+    const rest = COMMAND_PALETTE_COMMANDS.filter(command => !installedSuiteChromeCommands.includes(command));
+    const taken = new Set(rest.map(command => command.id));
+    commands.forEach(command => {
+        if (taken.has(command.id)) {
+            throw new Error(`[CommandPalette] Duplicate command id "${command.id}"`);
+        }
+        taken.add(command.id);
+    });
+    assertExecuteShortcutsArePrefixFree([...rest, ...commands]);
+
+    COMMAND_PALETTE_COMMANDS.splice(0, COMMAND_PALETTE_COMMANDS.length, ...rest, ...commands);
+    installedSuiteChromeCommands = [...commands];
+};
 
 // Availability is declared on each command: `platform` gates the environment, `scope` gates the
 // surroundings, `isAvailable` gates the current state, and `hidden` keeps mode-carrier commands out

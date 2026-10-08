@@ -4,7 +4,7 @@ import {
     resolveGridMapEscapeAction,
     resolveGridMapSourceIndex,
     shouldSuppressGridMapSelection,
-} from '../../../src/components/folia-grid/gridMapNavigation';
+} from '../../../src/library/suites/grid/directory/gridMapNavigation';
 
 // test/unit/gridView/gridMapNavigation.test.ts
 // Verifies GridMap navigation remains aligned with filtered and refreshed Grid3D collections,

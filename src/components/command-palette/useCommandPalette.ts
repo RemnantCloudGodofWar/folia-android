@@ -15,7 +15,7 @@ import { useInteractionSettingsStore } from '../../stores/useInteractionSettings
 import { resolveCustomShortcutCommand } from './customShortcut';
 
 // src/components/command-palette/useCommandPalette.ts
-import { isTextEntryTarget } from '../../utils/keyboardTargets';
+import { effectiveKeyCode, isTextEntryTarget } from '../../utils/keyboardTargets';
 
 // Manages palette state, keyboard opening, and selected autocomplete item.
 
@@ -505,7 +505,7 @@ export const useCommandPalette = ({
 
             // Works everywhere, because it carries a modifier.
             // Software-injected shortcuts may provide the key without a physical key code.
-            if ((event.code === 'KeyK' || event.key.toLowerCase() === 'k') && isPrimaryModifierPressed(event) && !event.altKey && !event.shiftKey && !isSecondaryModifierPressed(event)) {
+            if ((effectiveKeyCode(event) === 'KeyK' || event.key.toLowerCase() === 'k') && isPrimaryModifierPressed(event) && !event.altKey && !event.shiftKey && !isSecondaryModifierPressed(event)) {
                 if (isBlocked) {
                     return;
                 }
@@ -542,7 +542,7 @@ export const useCommandPalette = ({
                     // composition that the same press is already starting — the grids swallowed it
                     // for exactly this reason, and the palette has to keep doing so.
                     event.preventDefault();
-                    if (paletteHotkeyOnFilteringSurface && event.code === 'KeyS' && !event.shiftKey) {
+                    if (paletteHotkeyOnFilteringSurface && effectiveKeyCode(event) === 'KeyS' && !event.shiftKey) {
                         open();
                         return;
                     }
@@ -581,7 +581,7 @@ export const useCommandPalette = ({
                 return;
             }
 
-            if (event.code !== 'KeyS') {
+            if (effectiveKeyCode(event) !== 'KeyS') {
                 return;
             }
             if (event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) {

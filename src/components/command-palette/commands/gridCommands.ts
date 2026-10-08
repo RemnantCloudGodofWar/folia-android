@@ -1,4 +1,4 @@
-import { ArrowDownUp, CalendarClock, FolderSync, ListOrdered, PanelLeft, PanelRight, Pencil, RefreshCw, Share, SquarePen, Tags, Type } from 'lucide-react';
+import { ArrowDownUp, CalendarClock, FolderSync, ListOrdered, PanelLeft, PanelRight, Pencil, RefreshCw, Share, SquarePen, Star, Tags, Type } from 'lucide-react';
 import { createGridSurfaceCommand } from '../commandFactories';
 import type { CommandPaletteCommand } from '../types';
 
@@ -118,5 +118,14 @@ export const gridCommands: CommandPaletteCommand[] = [
         ['reload', 'refresh', 'resync', '重新加载', '刷新'],
         'reload-online-collection',
         RefreshCw,
+    ),
+    // 与信息面板封面上的星标按钮同一个动作（变更控制器的 toggleSubscribe）；标题不随状态变，面板没有动态标题。
+    createGridSurfaceCommand(
+        'grid-toggle-subscribe',
+        'Subscribe or unsubscribe',
+        'Save this online playlist or album to your library, or remove it if it is already there',
+        ['subscribe', 'unsubscribe', 'favorite', 'save album', '收藏', '取消收藏', '订阅'],
+        'toggle-subscribe',
+        Star,
     ),
 ];

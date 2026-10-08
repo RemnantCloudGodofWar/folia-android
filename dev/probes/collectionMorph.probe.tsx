@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { CollectionMorphOverlay } from '../../src/components/collectionOpenMorph/CollectionMorphOverlay';
-import { useCollectionMorphStore } from '../../src/components/collectionOpenMorph/collectionMorphStore';
+import { CollectionMorphOverlay } from '../../src/library/suites/grid/transitions/CollectionMorphOverlay';
+import { useCollectionMorphStore } from '../../src/library/suites/grid/transitions/collectionMorphStore';
 import {
     ACTIVE_GRID_ATTR,
     ARTIST_AVATAR_ATTR,
@@ -9,7 +9,7 @@ import {
     CARD_TITLE_ATTR,
     GRID3D_CARD_INDEX_ATTR,
     GRID_CARD_ITEM_ID_ATTR,
-} from '../../src/components/folia-grid/gridMorphContract';
+} from '../../src/library/suites/grid/transitions/gridMorphContract';
 import { useReducedMotionFor } from '../../src/hooks/useReducedMotionFor';
 import { useCollectionNavigationStore } from '../../src/stores/useCollectionNavigationStore';
 import { useMotionSettingsStore } from '../../src/stores/useMotionSettingsStore';

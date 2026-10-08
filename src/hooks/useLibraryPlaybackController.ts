@@ -60,10 +60,22 @@ import { useLibraryStore } from '../stores/useLibraryStore';
 import { setIsPanelOpen } from '../stores/useAppViewStore';
 import { currentTime } from '../stores/motionSignals';
 import { resolveLocalSongLyrics } from '../utils/lyrics/localSongLyrics';
+import { detectLyricFileIssues } from '../utils/lyrics/lyricFileIssues';
 
 // src/hooks/useLibraryPlaybackController.ts
 
 type SetState<T> = Dispatch<SetStateAction<T>>;
+
+// A broken sidecar lyric file is reported once per song per session; the Folder tab keeps the details.
+const reportedLyricFileIssueSongIds = new Set<string>();
+
+const shouldReportShiftedLyricFile = (localSong: LocalSong, lyricsSource: string | null): boolean => {
+    if (lyricsSource !== 'local' || reportedLyricFileIssueSongIds.has(localSong.id)) return false;
+    const issues = detectLyricFileIssues(localSong.localLyricsContent, localSong.localLyricsFormat);
+    if (!issues.includes('translation-shifted-to-end-time')) return false;
+    reportedLyricFileIssueSongIds.add(localSong.id);
+    return true;
+};
 
 const isBlobObjectUrl = (url: string | null | undefined): url is string => (
     typeof url === 'string' && url.startsWith('blob:')
@@ -575,7 +587,15 @@ export function useLibraryPlaybackController({
             navigateToPlaybackView();
         }
         setPlayerState(PlayerState.IDLE);
-        setStatusMsg({ type: 'success', text: t('status.localMusicLoaded')});
+        if (shouldReportShiftedLyricFile(preparedLocalSong, initialMeta.lyricsSource)) {
+            setStatusMsg({
+                type: 'info',
+                text: t('status.lyricFileIssueShifted', { title: initialMeta.unifiedSong.name }),
+                durationMs: 8000,
+            });
+        } else {
+            setStatusMsg({ type: 'success', text: t('status.localMusicLoaded')});
+        }
         void restoreCachedThemeForSong(initialMeta.unifiedSong).catch((error) => {
             console.warn('Theme load error', error);
         });

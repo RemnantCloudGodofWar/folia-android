@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { getConfiguredApiBase, neteaseApi } from '@/services/netease';
+import { neteaseApi } from '@/services/netease';
 import { neteaseProvider } from '@/services/onlineMusic/neteaseProvider';
 import type { UnifiedSong } from '@/types';
 import { parseLyricsAsync } from '@/utils/lyrics/workerClient';
@@ -8,7 +8,7 @@ import { parseLyricsAsync } from '@/utils/lyrics/workerClient';
 
 vi.mock('@/services/netease', () => ({
     isSongMarkedUnavailable: (candidate: UnifiedSong) => candidate.privilege?.st === -200,
-    getConfiguredApiBase: vi.fn(() => null),
+    getNeteaseRemoteApiBase: () => null,
     neteaseApi: {
         normalizeSongResult: vi.fn((raw: unknown) => raw),
         getSongUrl: vi.fn(),
@@ -20,8 +20,9 @@ vi.mock('@/services/netease', () => ({
         getArtistAlbums: vi.fn(),
         getPersonalizedPlaylists: vi.fn(),
         getLikedSongs: vi.fn(),
-        getQrKey: vi.fn(),
         checkQr: vi.fn(),
+        getQrKey: vi.fn(),
+        createQr: vi.fn(),
         scrobbleV1: vi.fn(),
     },
 }));
@@ -211,8 +212,63 @@ describe('neteaseProvider', () => {
     });
 
     it('keeps the backend code and message on an unmapped QR response', async () => {
-        vi.mocked(neteaseApi.checkQr).mockResolvedValue({ code: 404, msg: 'Not Found' } as any);
-        await expect(neteaseProvider.auth!.checkQr!('key')).resolves.toEqual({ state: 'error', message: 'code 404: Not Found' });
+        vi.mocked(neteaseApi.checkQr).mockResolvedValue({ code: 8821, message: '需要行为验证码验证' } as any);
+        await expect(neteaseProvider.auth!.checkQr!('key')).resolves.toEqual({
+            state: 'error',
+            message: 'code 8821: 需要行为验证码验证',
+            detail: { code: 8821, message: '需要行为验证码验证' },
+        });
+    });
+
+    it.each(['read ECONNRESET', 'socket hang up', 'Client network socket disconnected before secure TLS connection was established'])(
+        'marks a QR poll the upstream reset (%s) as a transient connection-reset',
+        async msg => {
+            vi.mocked(neteaseApi.checkQr).mockResolvedValue({ code: 502, msg } as any);
+            await expect(neteaseProvider.auth!.checkQr!('key')).resolves.toEqual({
+                state: 'error', message: `code 502: ${msg}`, reason: 'connection-reset', transient: true, detail: { code: 502, message: msg },
+            });
+        },
+    );
+
+    it('marks other network failures as transient and keeps their text as written', async () => {
+        vi.mocked(neteaseApi.checkQr).mockResolvedValue({ code: 502, msg: 'connect ECONNREFUSED 127.0.0.1:7890' } as any);
+        await expect(neteaseProvider.auth!.checkQr!('key')).resolves.toEqual({
+            state: 'error',
+            message: 'code 502: connect ECONNREFUSED 127.0.0.1:7890',
+            transient: true,
+            detail: { code: 502, message: 'connect ECONNREFUSED 127.0.0.1:7890' },
+        });
+    });
+
+    it('throws instead of handing out an empty QR key, carrying the backend response', async () => {
+        vi.mocked(neteaseApi.getQrKey).mockResolvedValue({ code: 200, data: { unikey: 'k1' } } as any);
+        await expect(neteaseProvider.auth!.getQrKey!()).resolves.toBe('k1');
+
+        const reset = { code: 502, msg: 'read ECONNRESET' };
+        vi.mocked(neteaseApi.getQrKey).mockResolvedValue(reset as any);
+        await expect(neteaseProvider.auth!.getQrKey!()).rejects.toMatchObject({
+            code: 'invalid-response',
+            message: 'NetEase QR key request failed: code 502: read ECONNRESET',
+            qrLoginReason: 'connection-reset',
+            transient: true,
+            cause: reset,
+        });
+
+        vi.mocked(neteaseApi.getQrKey).mockResolvedValue({ code: 502, msg: 'connect ETIMEDOUT 59.111.181.35:443' } as any);
+        const error = await neteaseProvider.auth!.getQrKey!().catch((caught: unknown) => caught);
+        expect(error).toMatchObject({ code: 'invalid-response', message: 'NetEase QR key request failed: code 502: connect ETIMEDOUT 59.111.181.35:443' });
+        expect(error).not.toHaveProperty('qrLoginReason');
+    });
+
+    it('fails instead of handing out an empty QR image', async () => {
+        vi.mocked(neteaseApi.createQr).mockResolvedValue({ code: 200, data: { qrimg: 'data:image/png;base64,AAAA' } } as any);
+        await expect(neteaseProvider.auth!.createQr!('k1')).resolves.toBe('data:image/png;base64,AAAA');
+
+        vi.mocked(neteaseApi.createQr).mockResolvedValue({ code: 400, msg: 'key is required' } as any);
+        await expect(neteaseProvider.auth!.createQr!('k1')).rejects.toMatchObject({
+            code: 'invalid-response',
+            message: 'NetEase QR image request failed: code 400: key is required',
+        });
     });
 });
 
@@ -306,22 +362,5 @@ describe('neteaseProvider listening reports', () => {
 
         await expect(neteaseProvider.playbackReports!.reportPlayback(reported, { playedSeconds: 45 }))
             .rejects.toMatchObject({ code: 'unavailable' });
-    });
-
-    // On Android the renderer holds no NetEase cookie (the built-in bridge keeps it), so a failed
-    // scan has to leave its QR codes and login-status outcome in the diagnostics instead.
-    it('reports the QR codes and the transport when the built-in bridge is in use', async () => {
-        vi.mocked(getConfiguredApiBase).mockReturnValue('extension');
-        vi.mocked(neteaseApi.getQrKey).mockResolvedValue({ code: 200, data: { unikey: 'key-1' } } as any);
-        vi.mocked(neteaseApi.checkQr).mockResolvedValue({ code: 803, cookie: 'MUSIC_U=abc' } as any);
-        const auth = neteaseProvider.auth!;
-
-        await expect(auth.getQrKey!()).resolves.toBe('key-1');
-        await expect(auth.checkQr!('key-1')).resolves.toEqual({ state: 'confirmed' });
-
-        const lines = await auth.getQrLoginDiagnostics!();
-        expect(lines).toContain('transport: built-in bridge (credentials stay in the native cookie jar, renderer storage stays empty by design)');
-        expect(lines.some(line => line.includes('qr:key ok'))).toBe(true);
-        expect(lines.some(line => line.includes('qr:check code=803 hasCookie=true'))).toBe(true);
     });
 });

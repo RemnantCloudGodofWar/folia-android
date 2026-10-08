@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { PINYIN_BY_PHRASE, PINYIN_PHRASE_COUNT } from 'virtual:folia-command-pinyin';
 import { COMMAND_PALETTE_COMMANDS } from '../../../src/components/command-palette/commandRegistry';
+import { buildSuiteChromeCommands } from '../../../src/components/command-palette/commands/suiteChromeCommands';
+import { listLibrarySuites } from '../../../src/library/registry';
 import zhCN from '../../../src/i18n/locales/zh-CN';
 
 // test/unit/command-palette/commandPinyinDictionary.test.ts
@@ -15,7 +17,14 @@ const localeCommands = (zhCN as any).commandPalette?.commands as Record<
     { title?: string; description?: string }
 >;
 
-const staticCommands = COMMAND_PALETTE_COMMANDS.filter(
+// 静态命令，加上 library suite 在 manifest 里声明的外观动作（B2，启动时才装进列表，这里照装入的方式自己生成）：
+// 它们的中文关键词写在 suites/<id>/entry.ts 或 chromeActions.ts 里，插件要扫到。
+const ALL_COMMANDS = [
+    ...COMMAND_PALETTE_COMMANDS.filter(command => command.scope !== 'suite-chrome'),
+    ...buildSuiteChromeCommands(listLibrarySuites()),
+];
+
+const staticCommands = ALL_COMMANDS.filter(
     command => command.textSource !== 'runtime' && !command.hidden,
 );
 
@@ -41,7 +50,7 @@ describe('generated command pinyin dictionary', () => {
 
     it('covers every hand-authored CJK synonym', () => {
         const missing: string[] = [];
-        COMMAND_PALETTE_COMMANDS.forEach(command => {
+        ALL_COMMANDS.forEach(command => {
             command.keywords.forEach(keyword => {
                 if (CJK.test(keyword) && !(keyword in PINYIN_BY_PHRASE)) {
                     missing.push(`${command.id}: ${keyword}`);

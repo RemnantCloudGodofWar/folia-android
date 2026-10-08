@@ -22,17 +22,20 @@ const PAGE_SCOPE_TARGETS = new Set<PonderTargetId>([
     'settings-page',
 ]);
 
+/** A rendered page explicitly opts out; missing or unknown scopes still use the view fallback. */
+export type PagePonderScope = PonderTargetId | 'none';
+
 export const resolvePagePonderTarget = (
     view: AppView,
     visibleScopeTargetId?: string | null,
-): PonderTargetId => (
+): PonderTargetId | null => visibleScopeTargetId === 'none' ? null : (
     visibleScopeTargetId && PAGE_SCOPE_TARGETS.has(visibleScopeTargetId as PonderTargetId)
         ? visibleScopeTargetId as PonderTargetId
         : PAGE_TARGET_BY_VIEW[view]
 );
 
 /** Returns the topmost mounted, visible page scope. Later overlays win over their underlying page. */
-export const readVisiblePagePonderScope = (): PonderTargetId | null => {
+export const readVisiblePagePonderScope = (): PagePonderScope | null => {
     if (typeof document === 'undefined') {
         return null;
     }
@@ -41,12 +44,12 @@ export const readVisiblePagePonderScope = (): PonderTargetId | null => {
     for (let index = scopes.length - 1; index >= 0; index -= 1) {
         const element = scopes[index];
         const targetId = element.dataset.ponderPageScope;
-        if (!targetId || !PAGE_SCOPE_TARGETS.has(targetId as PonderTargetId)) continue;
+        if (!targetId || (targetId !== 'none' && !PAGE_SCOPE_TARGETS.has(targetId as PonderTargetId))) continue;
 
         const style = window.getComputedStyle(element);
         const rect = element.getBoundingClientRect();
         if (style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0) {
-            return targetId as PonderTargetId;
+            return targetId as PagePonderScope;
         }
     }
 
@@ -89,16 +92,10 @@ export const openVisualizerSettingsFromPonder = (section: VisualizerSettingsSect
 };
 
 /** Opens Ponder for the foremost page and completes the non-dismissible shortcut lesson if present. */
-export const openCurrentPagePonder = (): PonderTargetId => {
+export const openCurrentPagePonder = (): PonderTargetId | null => {
     const modal = useSettingsModalStore.getState();
-    // 第一次那道门是压在首页上的，按页面 scope 解析出来的是海报墙 —— 而它要教的是
-    // 「Folia 大致怎么转」。这一条比页面 scope 优先。
-    const targetId = modal.isUserGuideModalOpen
-        ? 'help-page'
-        : resolvePagePonderTarget(
-            useAppViewStore.getState().view,
-            readVisiblePagePonderScope(),
-        );
+    const targetId = readCurrentPagePonderTarget();
+    if (targetId === null) return null;
 
     if (modal.isUserGuideModalOpen) {
         if (typeof __APP_VERSION__ !== 'undefined') {
@@ -109,4 +106,17 @@ export const openCurrentPagePonder = (): PonderTargetId => {
 
     usePonderStore.getState().openPonder(targetId);
     return targetId;
+};
+
+/** Resolves the same target for shortcut feedback, touch and command entry points. */
+export const readCurrentPagePonderTarget = (): PonderTargetId | null => {
+    const modal = useSettingsModalStore.getState();
+    // 第一次那道门是压在首页上的，按页面 scope 解析出来的是海报墙 —— 而它要教的是
+    // 「Folia 大致怎么转」。这一条比页面 scope 优先。
+    return modal.isUserGuideModalOpen
+        ? 'help-page'
+        : resolvePagePonderTarget(
+            useAppViewStore.getState().view,
+            readVisiblePagePonderScope(),
+        );
 };

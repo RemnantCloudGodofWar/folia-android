@@ -51,16 +51,74 @@ const HUB_MIN_DEPS = 32;
  * （比如 stores 只是 `import type { PanelTab }` 就会被误判成依赖了组件）。
  */
 const BOUNDARY_RULES = [
-    { from: /^src\/stores\//, to: /^src\/components\//, why: 'store 不应依赖组件' },
-    { from: /^src\/utils\//, to: /^src\/(components|hooks|stores)\//, why: '纯变换不应依赖 UI 或状态' },
-    { from: /^src\/types/, to: /^src\/(components|hooks|stores|services)\//, why: '契约层不应依赖实现' },
-    { from: /^src\/services\//, to: /^src\/components\//, why: 'service 不应依赖组件' },
+    { from: /^src\/stores\//, to: /^src\/(components|library\/(suites|app))\//, why: 'store 不应依赖组件' },
     {
-        from: /^src\/(components|hooks|stores)\//,
+        from: /^src\/utils\//,
+        to: /^src\/(components|hooks|stores|library\/(suites|app|core\/(state|bindings)))\//,
+        why: '纯变换不应依赖 UI 或状态',
+    },
+    {
+        from: /^src\/types/,
+        to: /^src\/(components|hooks|stores|services|library\/(suites|app|core\/(services|state|bindings)))\//,
+        why: '契约层不应依赖实现',
+    },
+    { from: /^src\/services\//, to: /^src\/(components|library\/(suites|app))\//, why: 'service 不应依赖组件' },
+    {
+        from: /^src\/(components|hooks|stores|library\/(core\/(state|bindings)|suites|app))\//,
         to: /^src\/services\/onlineMusic\/.*(Provider|Transport)\.ts$/,
         why: '普通调用应经过 omni，不应直连 provider adapter/transport',
     },
+    // src/library：headless core 与 UI suites 分开。core 的子层与老目录一一对应——
+    // contracts≈types、model≈utils、services≈services、state≈stores、bindings≈hooks；
+    // suites/*、app 与 registry 是 UI，地位等同 components（见 UI_DIRS）。
+    {
+        from: /^src\/library\/core\//,
+        to: /^src\/(components\/|library\/(suites\/|app\/|registry\.))/,
+        why: 'library core 不应依赖 UI（suites、app、registry、components）',
+    },
+    {
+        from: /^src\/library\/core\/contracts\//,
+        to: /^src\/(?!types|library\/core\/contracts\/)/,
+        why: 'core/contracts 只引用别的契约与 src/types 的数据类型',
+    },
+    {
+        from: /^src\/library\/core\/model\//,
+        to: /^src\/(components|hooks|stores|services|library\/core\/(services|state|bindings))\//,
+        why: 'core/model 是叶子：不读状态、不调 service、不碰绑定',
+    },
+    {
+        from: /^src\/library\/core\/(services|state)\//,
+        to: /^src\/(hooks|library\/core\/bindings)\//,
+        why: 'core/services 与 core/state 不应依赖 React 绑定',
+    },
+    {
+        from: /^src\/library\/suites\//,
+        to: /^src\/library\/suites\//,
+        when: (from, to) => suiteOf(from) !== suiteOf(to),
+        why: 'suite 之间互不依赖',
+    },
+    {
+        from: /^src\/library\/suites\//,
+        to: /^src\/library\/core\/services\//,
+        why: 'suite 不直接用 core/services：资源与控制器由宿主（app）创建后传入',
+    },
+    {
+        from: /^src\/(?!library\/(suites\/|registry\.))/,
+        to: /^src\/library\/suites\//,
+        why: 'suite 只经 registry 使用：宿主与外壳按 surface 解析，不直接 import 某套 suite',
+    },
 ];
+
+/** `src/library/suites/<id>/...` 的 suite id。 */
+const suiteOf = file => /^src\/library\/suites\/([^/]+)\//.exec(file)?.[1] ?? null;
+
+/**
+ * 按目录算作 UI 的地方。命中规则、目标却不含 UI 的边记为「目录归属存疑」：依赖方向没问题，
+ * 是纯模块住进了 UI 目录（修法是把它挪进 core/model 或 utils，不是改依赖）。
+ */
+const UI_DIRS = /^src\/(components\/|library\/(suites\/|app\/|registry\.))/;
+
+const ruleMatches = (rule, from, to) => rule.from.test(from) && rule.to.test(to) && (!rule.when || rule.when(from, to));
 
 /**
  * 哪些模块在运行时真的会把 React 拉进来。
@@ -113,10 +171,11 @@ function collect(root) {
     for (const [from, targets] of graph.forward) {
         for (const to of targets) {
             if (graph.typeOnly.has(edgeKey(from, to))) continue;
-            const rule = BOUNDARY_RULES.find(r => r.from.test(from) && r.to.test(to));
+            const rule = BOUNDARY_RULES.find(r => ruleMatches(r, from, to));
             if (!rule) continue;
-            // 指向 components 但目标其实不含 UI：依赖方向没问题，是文件住错了目录。
-            const nominal = /^src\/components\//.test(to) && !uiModules.has(to);
+            // 指向 UI 目录（components、library 的 suites / app / registry）但目标其实不含 UI：
+            // 依赖方向没问题，是文件住错了目录。
+            const nominal = UI_DIRS.test(to) && !uiModules.has(to);
             (nominal ? misplaced : violations).push({ from, to, why: rule.why });
         }
     }
@@ -191,7 +250,7 @@ function render({ areas, hubs, registries, violations, misplaced }) {
         out.push('### 目录归属存疑');
         out.push('');
         out.push('这些边命中了规则，但目标模块在运行时根本不含 UI（不传递依赖 react）。');
-        out.push('依赖方向没问题，是文件住在了 `src/components/` 下面。修法是移动文件，不是改依赖。');
+        out.push('依赖方向没问题，是文件住在了 UI 目录（`src/components/`、`src/library/` 的 suites / app）下面。修法是移动文件，不是改依赖。');
         out.push('');
         for (const v of misplaced) out.push(`- \`${v.from}\` → \`${v.to}\``);
         out.push('');

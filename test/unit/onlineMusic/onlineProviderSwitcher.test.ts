@@ -29,7 +29,7 @@ vi.mock('react-i18next', async importOriginal => ({
 
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import OnlineProviderSwitcher from '@/components/app/home/OnlineProviderSwitcher';
+import OnlineProviderSwitcher from '@/library/suites/grid/account/OnlineProviderSwitcher';
 import type { ProviderAccountSummary } from '@/types/onlineMusic';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;

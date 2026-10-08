@@ -1,5 +1,5 @@
 import type { LocalLibrarySnapshot, LocalLibrarySnapshotNode, LocalSong } from '../types';
-import type { GridMapDirectoryNode } from '../components/folia-grid/gridMapBatch';
+import type { LibraryDirectoryNode } from '../library/core/contracts/directory';
 import { getDirHandles, getLocalLibrarySnapshot, getLocalSongs } from './db';
 
 // src/services/localLibraryDirectoryTree.ts
@@ -12,7 +12,7 @@ const getSongFolderPath = (song: LocalSong) => normalizeLocalPath(song.folderNam
 export const buildLocalLibraryDirectoryTrees = (
     snapshots: LocalLibrarySnapshot[],
     songs: LocalSong[],
-): GridMapDirectoryNode[] => {
+): LibraryDirectoryNode[] => {
     const directCounts = new Map<string, number>();
     for (const song of songs) {
         const folderPath = getSongFolderPath(song);
@@ -24,7 +24,7 @@ export const buildLocalLibraryDirectoryTrees = (
         node: LocalLibrarySnapshotNode,
         rootPath: string,
         depth: number,
-    ): GridMapDirectoryNode => {
+    ): LibraryDirectoryNode => {
         const path = normalizeLocalPath(node.relativePath || rootPath);
         const children = (node.ignored ? [] : node.children)
             .map(child => convertNode(child, rootPath, depth + 1))
@@ -50,7 +50,7 @@ export const buildLocalLibraryDirectoryTrees = (
         .sort((a, b) => a.name.localeCompare(b.name));
 };
 
-export const loadLocalLibraryDirectoryTrees = async (songs?: LocalSong[]): Promise<GridMapDirectoryNode[]> => {
+export const loadLocalLibraryDirectoryTrees = async (songs?: LocalSong[]): Promise<LibraryDirectoryNode[]> => {
     const handles = await getDirHandles();
     const snapshots = (await Promise.all(
         Object.keys(handles).map(rootPath => getLocalLibrarySnapshot(rootPath)),

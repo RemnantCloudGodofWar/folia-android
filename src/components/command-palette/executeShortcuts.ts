@@ -13,11 +13,25 @@ export type ExecuteShortcutResolution =
 
 export const normalizeExecuteShortcut = (value: string) => value.trim().toLowerCase();
 
-// These scopes cannot exist in the same view, so their commands may intentionally share a key.
-const scopesAreDisjoint = (first: CommandPaletteCommand, second: CommandPaletteCommand) => (
-    (first.scope === 'lattice' && second.scope === 'player-surface')
-    || (first.scope === 'player-surface' && second.scope === 'lattice')
-);
+// Scopes whose availability check (availability.ts) requires one particular app view. Two of them that
+// require different views can never be offered together, so their commands may share a key.
+const SCOPE_VIEW: Partial<Record<NonNullable<CommandPaletteCommand['scope']>, string>> = {
+    'player-surface': 'player',
+    lattice: 'lattice',
+    'suite-chrome': 'home',
+};
+
+// Commands that cannot be offered in the same surface, so they may intentionally share a key:
+// scopes pinned to different views, and the chrome actions of two different library suites (only the
+// suite registered right now has its chrome available — see createSuiteChromeCommand).
+const scopesAreDisjoint = (first: CommandPaletteCommand, second: CommandPaletteCommand) => {
+    const firstView = first.scope ? SCOPE_VIEW[first.scope] : undefined;
+    const secondView = second.scope ? SCOPE_VIEW[second.scope] : undefined;
+    if (firstView && secondView && firstView !== secondView) return true;
+    return first.scope === 'suite-chrome'
+        && second.scope === 'suite-chrome'
+        && first.scopeOwner !== second.scopeOwner;
+};
 
 /** Validates every pair that can be offered together in one execute-mode surface. */
 export const assertExecuteShortcutsArePrefixFree = (commands: CommandPaletteCommand[]) => {

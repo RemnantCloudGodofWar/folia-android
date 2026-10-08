@@ -24,7 +24,7 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 $envPath = Join-Path $repoRoot '.env.local'
-$credentialsPath = Join-Path $repoRoot 'test-results\.dev-credentials'
+$credentialsPath = Join-Path $repoRoot '.dev-credentials\kugou.json'
 
 # Read one named environment variable from the repository's dotenv file.
 function Get-EnvValue {
@@ -57,18 +57,18 @@ function Read-CredentialFile {
     param([Parameter(Mandatory = $true)][string]$FilePath)
 
     if (-not (Test-Path -LiteralPath $FilePath)) {
-        throw "Missing development credentials: test-results/.dev-credentials"
+        throw "Missing development credentials: .dev-credentials/kugou.json"
     }
 
     $text = (Get-Content -LiteralPath $FilePath -Raw).Trim()
     if (-not $text) {
-        throw "Development credentials file is empty: test-results/.dev-credentials"
+        throw "Development credentials file is empty: .dev-credentials/kugou.json"
     }
 
     try {
         return $text | ConvertFrom-Json -AsHashtable
     } catch {
-        throw "Development credentials must contain valid JSON: test-results/.dev-credentials"
+        throw "Development credentials must contain valid JSON: .dev-credentials/kugou.json"
     }
 }
 

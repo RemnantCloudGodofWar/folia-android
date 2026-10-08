@@ -21,6 +21,7 @@ export function splitCombinedTimeline(rawText: string): { main: string, trans: s
         timestampSignature: string,
         startTimestamp: string,
         isEnhancedLike: boolean,
+        isBlank: boolean,
     }> = [];
 
     for (const line of lines) {
@@ -53,14 +54,16 @@ export function splitCombinedTimeline(rawText: string): { main: string, trans: s
                 raw: line,
                 timestampSignature,
                 startTimestamp,
-                isEnhancedLike: enhancedAngleRegex.test(line) || (hasMultipleBracketTimestamps && enhancedBracketRegex.test(line))
+                isEnhancedLike: enhancedAngleRegex.test(line) || (hasMultipleBracketTimestamps && enhancedBracketRegex.test(line)),
+                isBlank: !line.replace(/\[[^\]]*\]|<[^>]*>/gu, '').trim()
             });
         } else {
             extracted.push({
                 raw: line,
                 timestampSignature: '',
                 startTimestamp: '',
-                isEnhancedLike: false
+                isEnhancedLike: false,
+                isBlank: false
             });
         }
     }
@@ -86,8 +89,13 @@ export function splitCombinedTimeline(rawText: string): { main: string, trans: s
             i++;
         }
 
-        if (group.length > 1) {
-            const [main, ...alternates] = group;
+        // A blank timed line only marks where the previous line ends. When it shares a timestamp with
+        // the next line it must not take the original's slot, or that line would be pushed into the
+        // translation track and vanish from the main lyrics.
+        const members = group.length > 1 ? group.filter(line => !line.isBlank) : group;
+
+        if (members.length > 1) {
+            const [main, ...alternates] = members;
             const romanizationCandidates = hasCjkScript(main.raw)
                 ? alternates.filter(candidate => isRomanizationCandidate(candidate.raw))
                 : [];
@@ -99,7 +107,7 @@ export function splitCombinedTimeline(rawText: string): { main: string, trans: s
             if (romanization) romanizationLines.push(romanization.raw);
             isCombined = true;
         } else {
-            mainLines.push(current.raw);
+            mainLines.push((members[0] ?? current).raw);
         }
     }
 

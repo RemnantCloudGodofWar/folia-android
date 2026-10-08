@@ -1,6 +1,6 @@
 import { useEffect, useRef, type RefObject } from 'react';
 import { usePonderStore } from '../stores/usePonderStore';
-import { hasBlockingWindow, isTextEntryTarget } from '../utils/keyboardTargets';
+import { effectiveKeyCode, hasBlockingWindow, isTextEntryTarget } from '../utils/keyboardTargets';
 import { PONDER_HOLD_DURATION_MS, startPonderHoldProgress, type PonderHoldProgressRefs } from './ponderHoldProgress';
 
 // src/hooks/usePonderHoldToEnter.ts
@@ -62,7 +62,7 @@ export const usePonderHoldToEnter = ({
         };
 
         const handleKeyDown = (event: KeyboardEvent) => {
-            if (event.code !== 'KeyG' || event.repeat || event.isComposing) {
+            if (effectiveKeyCode(event) !== 'KeyG' || event.repeat || event.isComposing) {
                 return;
             }
             if (event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) {
@@ -89,7 +89,7 @@ export const usePonderHoldToEnter = ({
         };
 
         const handleKeyUp = (event: KeyboardEvent) => {
-            if (event.code === 'KeyG') {
+            if (effectiveKeyCode(event) === 'KeyG') {
                 cancelHold();
             }
         };

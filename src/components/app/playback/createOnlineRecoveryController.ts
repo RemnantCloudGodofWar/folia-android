@@ -92,10 +92,12 @@ export const createOnlineRecoveryController = ({
         failedSrc,
         resumeAt,
         autoplay,
+        shouldAutoplay,
     }: {
         failedSrc?: string | null;
         resumeAt?: number;
         autoplay: boolean;
+        shouldAutoplay?: () => boolean;
     }): Promise<boolean> => {
         const song = currentSong;
         const audioElement = audioRef.current;
@@ -153,7 +155,9 @@ export const createOnlineRecoveryController = ({
                 }
 
                 pendingResumeTimeRef.current = Math.max(0, resumeAt ?? audioRef.current.currentTime ?? 0);
-                shouldAutoPlayRef.current = autoplay;
+                // Resolving a fresh source must not undo a pause while the request
+                // was in flight. Other recovery callers retain their autoplay policy.
+                shouldAutoPlayRef.current = autoplay && (shouldAutoplay?.() ?? true);
                 currentOnlineAudioUrlFetchedAtRef.current = audioResult.audioSrc.startsWith('blob:')
                     ? null
                     : Date.now();

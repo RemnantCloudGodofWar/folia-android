@@ -74,6 +74,29 @@ node dev/mcp/ts-code-map/cli.mjs doctor    # 环境自检
   `isBuiltinVisualizerMode` / `isBuiltinVisualizerBackgroundMode`，不要 import registry。
   需要认 mod 投稿模式时才用 registry 的 `hasVisualizerMode`。模式清单由 registry 初始化时
   断言，漂移会抛错。
+- 集合浏览（Library）按 headless core 与 UI suite 分开，都在 `src/library/`：`core/` 里
+  `contracts`（只有类型：集合描述、资源、能力、端口、变更动作、会话）← `model`（纯变换，叶子：不读
+  store、不调 service、不 import react）← `services`（资源、registry、缓存、同步、变更控制器）/
+  `state`（zustand store，storeContract 一并扫描）← `bindings`（React hooks）。`suites/<id>/` 是
+  各套 UI（每套 `entry.ts` + 自己的整个文件夹），`registry.ts` 发现 suite 并按 surface 回退到默认的
+  grid，`app/` 是宿主装配（集合宿主、播放 / 变更端口、suite 切换）。规则：core 不 import suites、
+  app、registry 和 `src/components`；suite 之间互不 import，也不直接用 `core/services`（资源与控制器
+  由宿主创建后传入）；stores / services / utils / types 不 import suites 与 app；suites 之外只有 registry
+  引用 suite（宿主、首页外壳都经 registry 解析）；不建 barrel。
+  这些规则同时写在 `codemap.mjs` 的 `BOUNDARY_RULES` 和 `test/unit/library/layerBoundaries.test.ts` 里。
+  网格 suite 按 surface 分子目录：`suites/grid/{home,collection,directory,artist,shared,transitions}`
+  （首页 `Grid3D` 与本地 / Navidrome 首页、集合详情 `GridView`、`GridMap` 与批量面板、歌手页、
+  hex 视口与卡片、打开转场）；TUI 在 `suites/tui/`（实现首页 `LibraryTuiHome`、集合 `LibraryTuiView` 与歌手页 `LibraryTuiArtist`）；
+  集合宿主 `GridViewOverlayHost` 与端口在 `app/`，首页资源（在线 feed、Navidrome 概览、文件夹树、首页动作）由
+  Home 外壳的 `app/useLibraryHomeResources` 持有，换 suite 不重新请求。
+  能力契约在 `core/contracts/suite.ts`（surface：home / collection / artist；集合动作 `LibraryActionId`、
+  首页动作 `LibraryHomeActionId`、歌手页动作 `LibraryArtistActionId`（能力规则在 `core/model/artistSurface`，两套歌手页共用 `core/bindings/useArtistView`）；
+  每个 surface 的 props 契约；suite manifest），每套 suite 的 `entry.ts` 声明自己实现了哪些 surface 与动作。
+  没实现的 surface 由默认 suite（grid）渲染，没声明的动作不进命令面板（`buildGridSurfaceState` 按声明过滤）。
+  entry 里的组件必须是 `React.lazy`，只有默认 suite 例外（Grid3D 在首屏、移形换影要从第一次打开就在）；
+  开发验证专用的 suite（tui）默认关闭，只有 `import.meta.env.DEV` 且显式 `VITE_LIBRARY_TUI=true` 时启用；测试配置自动开启。
+  网格专属的转场（移形换影）经 entry 的
+  `transitions` 交给宿主，宿主与 `switchLibrarySuite` 不直接 import 网格。
 - `App.tsx` 是历史遗留的装配缝，已经很大。新行为应该组装进相邻的 `components/app/*`、
   hooks、stores、services，而不是继续堆进去。参见 `skills/file-modularization/SKILL.md`。
 

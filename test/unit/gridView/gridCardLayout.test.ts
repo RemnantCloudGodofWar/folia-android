@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { squareGridCardBox } from '../../../src/components/folia-grid/gridCardLayout';
+import { squareGridCardBox } from '../../../src/library/suites/grid/shared/gridCardLayout';
 
 // test/unit/gridView/gridCardLayout.test.ts
 // The square-card option changes the wall's whole rhythm, not just one card's height. The first

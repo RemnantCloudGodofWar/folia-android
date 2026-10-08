@@ -7,6 +7,7 @@ import LyricTimelineOffsetControl from './LyricTimelineOffsetControl';
 import LyricFileButton from './LyricFileButton';
 import ReplayGainControl from './ReplayGainControl';
 import { getLyricProviderLabel, getSongNativeLyricProviderSource } from '../../utils/lyrics/lyricSourceLabels';
+import { readLyricFile } from '../../utils/lyrics/lyricFileDecoding';
 
 // src/components/panelTab/OnlineLyricsTab.tsx
 
@@ -72,14 +73,13 @@ const OnlineLyricsTab: React.FC<OnlineLyricsTabProps> = ({
             return;
         }
 
-        const reader = new FileReader();
-        reader.onload = nextEvent => {
-            const content = nextEvent.target?.result as string | null;
+        void readLyricFile(file).then((content) => {
             if (content) {
                 onImportLyrics(content, file.name);
             }
-        };
-        reader.readAsText(file);
+        }).catch((error) => {
+            console.error(`[OnlineLyricsTab] Failed to read lyric file ${file.name}`, error);
+        });
         event.target.value = '';
     };
 

@@ -13,7 +13,7 @@ interface PlaylistSelectionDialogProps {
     isOpen: boolean;
     title: string;
     description?: string;
-    playlists: PlaylistSelectionDialogItem[];
+    playlists: readonly PlaylistSelectionDialogItem[];
     isDaylight?: boolean;
     onClose: () => void;
     onSelect: (playlistId: string | number) => Promise<void> | void;

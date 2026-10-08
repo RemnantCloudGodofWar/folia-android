@@ -3,8 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // test/unit/services/neteaseDailyRecommendations.test.ts
 // Covers the daily recommendation endpoints and their normalized client-facing shapes.
 
+// fetchWithCreds 读正文文本再解析（不是 JSON 时要报出状态码与正文开头），所以桩要有 text()。
 const mockJsonResponse = (payload: unknown) => ({
+    status: 200,
     json: vi.fn().mockResolvedValue(payload),
+    text: vi.fn().mockResolvedValue(JSON.stringify(payload)),
 });
 
 const createSong = (id: number, name: string) => ({

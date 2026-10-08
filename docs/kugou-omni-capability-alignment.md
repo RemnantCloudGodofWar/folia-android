@@ -7,7 +7,7 @@
 - `src/services/onlineMusic/omni.ts`：统一入口及当前调用方式
 - `src/types/onlineMusic.ts`：provider adapter 合约
 - `src/services/onlineMusic/kugouProvider.ts`：酷狗实现
-- `src/hooks/useKugouLibrary.ts`、`src/components/Grid3D.tsx`、`src/components/GridView.tsx`：当前 UI 使用点
+- `src/hooks/useKugouLibrary.ts`、`src/library/suites/grid/home/Grid3D.tsx`、`src/library/suites/grid/collection/GridView.tsx`：当前 UI 使用点
 - `docs/ku-go-api-docs.md`：酷狗接口文档
 
 ## 已对齐能力

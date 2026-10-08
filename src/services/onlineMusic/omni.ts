@@ -18,6 +18,7 @@ import type {
     OnlineMusicProvider,
     PersonalFmRequestOptions,
     ProviderCatalogEntityKind,
+    LoginSelfCheckResult,
     QrLoginMethod,
     QrLoginState,
 } from '../../types/onlineMusic';
@@ -259,6 +260,16 @@ export const omni = {
         } catch (error) {
             return [`provider diagnostics unavailable: ${error instanceof Error ? error.message : String(error)}`];
         }
+    },
+
+    // 扫码失败后的主动自检：没有这个能力的 provider（kugou、bodian、mod 源）回 false / null。
+    // 自检本身出错时照常抛出，由登录会话记进时间线与报告。
+    canRunQrLoginSelfCheck(providerId: OmniProviderId): boolean {
+        return Boolean(requireOnlineMusicProvider(providerId).auth?.canRunQrLoginSelfCheck?.());
+    },
+
+    async runQrLoginSelfCheck(providerId: OmniProviderId): Promise<LoginSelfCheckResult | null> {
+        return await requireOnlineMusicProvider(providerId).auth?.runQrLoginSelfCheck?.() ?? null;
     },
 
     // 只有明确声明了二维码寿命的 provider 才由前端计时；其余照旧只认后端报出的过期状态。

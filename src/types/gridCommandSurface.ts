@@ -23,7 +23,8 @@ export type GridSurfaceActionId =
     | 'export-playlist'
     | 'edit-entity'
     | 'toggle-edit-mode'
-    | 'reload-online-collection';
+    | 'reload-online-collection'
+    | 'toggle-subscribe';
 
 export type GridSurfaceState = {
     /**

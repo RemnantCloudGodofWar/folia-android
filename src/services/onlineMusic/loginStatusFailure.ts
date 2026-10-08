@@ -48,12 +48,16 @@ export const handleLoginStatusFailure = async (
             freshness: 'error',
         });
     }
+    // QQ provider already logs a filtered summary and isolates superseded QR attempts.
+    // 所以对 QQ 只去掉原始错误的 name / message（可能带后端或网络层的文字），是否有缓存账号、是否鉴权失效照记。
     console.warn('[LoginStatus] failure', {
         providerId,
         hadCachedAccount: Boolean(cachedUser),
         authRequired,
-        name: error instanceof Error ? error.name : 'Error',
-        message,
+        ...(providerId === 'qq' ? {} : {
+            name: error instanceof Error ? error.name : 'Error',
+            message,
+        }),
     });
     return null;
 };

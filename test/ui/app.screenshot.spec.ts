@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
 import {
     installBaseState,
@@ -10,6 +11,9 @@ import {
 // test/ui/app.screenshot.spec.ts
 // Visual baselines for the three home surfaces. The mocked world they boot into lives in
 // ./helpers/appFixtures so other specs can reach a populated grid too.
+// The dev-only suite switch (it shows on the home since P3.4) is hidden while capturing: it is not
+// part of the app a production build ships, and the baselines predate it.
+const HIDE_DEV_OVERLAYS = fileURLToPath(new URL('./helpers/hideDevOverlays.css', import.meta.url));
 
 
 test.describe('frontend screenshot coverage', () => {
@@ -22,6 +26,7 @@ test.describe('frontend screenshot coverage', () => {
     await expect(page.getByRole('heading', { name: 'Daily Mix' }).first()).toBeVisible();
     await expect(page).toHaveScreenshot('netease-home.png', {
       animations: 'disabled',
+      stylePath: HIDE_DEV_OVERLAYS,
       scale: 'css',
       fullPage: true,
     });
@@ -41,6 +46,7 @@ test.describe('frontend screenshot coverage', () => {
     await expect(page.getByText('Aurora Echoes').first()).toBeVisible();
     await expect(page).toHaveScreenshot('navidrome-home.png', {
       animations: 'disabled',
+      stylePath: HIDE_DEV_OVERLAYS,
       scale: 'css',
       fullPage: true,
     });
@@ -61,6 +67,7 @@ test.describe('frontend screenshot coverage', () => {
     await expect(page.getByRole('button', { name: 'Import Folder' }).first()).toBeVisible();
     await expect(page).toHaveScreenshot('local-library.png', {
       animations: 'disabled',
+      stylePath: HIDE_DEV_OVERLAYS,
       scale: 'css',
       fullPage: true,
     });

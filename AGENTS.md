@@ -65,7 +65,7 @@ skill 只负责地图和编译器都推不出来的东西：口头术语到名�
 
 - `kugou-provider-alignment`
   路径：`skills/kugou-provider-alignment/SKILL.md`
-  用于开发阶段根据 `docs\ku-go-api-docs.md`、`.env.local` 中的真实 KuGou 服务和 `test-results\.dev-credentials` 对齐酷狗 provider 的请求与响应，禁止猜测接口结构。
+  用于开发阶段根据 `docs\ku-go-api-docs.md`、`.env.local` 中的真实 KuGou 服务和 `.dev-credentials\kugou.json` 对齐酷狗 provider 的请求与响应，禁止猜测接口结构。
 
 - `online-song-omni-routing`
   路径：`skills/online-song-omni-routing/SKILL.md`

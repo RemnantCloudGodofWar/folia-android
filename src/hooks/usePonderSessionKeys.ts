@@ -1,5 +1,6 @@
 import { useEffect, useRef, type RefObject } from 'react';
 import { usePonderStore } from '../stores/usePonderStore';
+import { effectiveKeyCode } from '../utils/keyboardTargets';
 import type { PonderTimelineControls } from '../components/ponder/usePonderTimeline';
 
 // src/hooks/usePonderSessionKeys.ts
@@ -36,7 +37,7 @@ export const usePonderSessionKeys = ({ isActive, sceneCount, controlsRef, onAnyK
 
         const handleKeyDown = (event: KeyboardEvent) => {
             // 浏览器/系统级组合键放过，Tab 放过：接管键盘不等于把无障碍焦点也锁死。
-            if (event.ctrlKey || event.altKey || event.metaKey || event.code === 'Tab') {
+            if (event.ctrlKey || event.altKey || event.metaKey || effectiveKeyCode(event) === 'Tab') {
                 return;
             }
 
@@ -47,7 +48,7 @@ export const usePonderSessionKeys = ({ isActive, sceneCount, controlsRef, onAnyK
             const controls = controlsRef.current;
             const store = usePonderStore.getState();
 
-            switch (event.code) {
+            switch (effectiveKeyCode(event)) {
                 case 'Escape':
                     store.closePonder();
                     break;

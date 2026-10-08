@@ -10,7 +10,7 @@ import { PLAYER_BOTTOM_BAR_BASE_OFFSET_PX } from '../../src/utils/playerBottomBa
 import { PlayerState } from '../../src/types';
 import type { PlayerControlSlotActionId } from '../../src/components/floating-player/playerControlSlotActions';
 import { GridListSearchButton } from '../../src/components/shared/GridListSearchButton';
-import OnlineProviderSwitcher from '../../src/components/app/home/OnlineProviderSwitcher';
+import OnlineProviderSwitcher from '../../src/library/suites/grid/account/OnlineProviderSwitcher';
 import type { ProbeDefinition } from './definition';
 // dev/probes/playerBottomBar.probe.tsx
 

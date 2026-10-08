@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type React from 'react';
 import type { PanelTab } from '../components/UnifiedPanel';
+import type { LibraryQueryPort } from '../library/core/contracts/session';
 
 // src/stores/useAppViewStore.ts
 // Which surface the app is showing, and the unified panel's own open/tab state.
@@ -32,11 +33,17 @@ export type CommandPaletteRequest =
     // from needing a prop chain back to the palette hook.
     | { seq: number; kind: 'command'; commandId: string };
 
-export type CommandFilterHandle = {
-    getQuery: () => string;
-    setQuery: (query: string) => void;
+/**
+ * Where the palette's inline box goes. Only the renderer knows that — it is a DOM element — so it is
+ * kept apart from the query itself, which may come from Library Core (a browse session) and must
+ * not drag `HTMLElement` into it.
+ */
+export type CommandFilterAnchor = {
     getAnchor: () => HTMLElement | null;
 };
+
+/** The registered owner of typed characters: a query port (read/write the filter text) plus its anchor. */
+export type CommandFilterHandle = LibraryQueryPort & CommandFilterAnchor;
 
 type AppViewState = {
     view: AppView;

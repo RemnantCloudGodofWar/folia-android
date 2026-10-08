@@ -312,10 +312,6 @@ export interface StructuredLyric {
     synced?: boolean;
 }
 
-export type NavidromeViewSelection =
-    | { type: 'album'; albumId: string; }
-    | { type: 'artist'; artistId: string; };
-
 export interface LyricsBySongIdResponse {
     lyricsList?: {
         structuredLyrics?: StructuredLyric[];

@@ -21,7 +21,7 @@ description: Use when adding or refactoring frontend features in this repository
 
 ## Current app boundaries
 
-- `src/components/app/Home.tsx` -> `components/app/home/*`，尤其 `buildHomeModel.ts`、collection adapters、`GridViewOverlayHost.tsx`、local/Navi grid views。
+- `src/components/app/Home.tsx` -> `components/app/home/*`（`buildHomeModel.ts`、collection adapters）与 `src/library/`（集合宿主 `app/GridViewOverlayHost.tsx`、网格 suite `suites/grid/*` 里的 local/Navi grid views）。
 - `src/components/app/PlayerPanel.tsx` -> `components/app/player-panel/*`。
 - `src/components/app/overlays/AppOverlays.tsx` -> `components/app/overlays/*`。
 - `src/components/app/dialogs/AppDialogs.tsx` -> `components/app/dialogs/*`。
@@ -60,7 +60,7 @@ description: Use when adding or refactoring frontend features in this repository
 
 - 在 `App.tsx` 中直接新增完整功能区、请求函数或大段事件处理。
 - 在页面组件中混合 provider 请求、缓存、排序工具和类型声明。
-- 把新首页、GridView、集合详情功能塞回旧的 `LocalMusicView`、`local/LocalPlaylistView` 或 `navidrome/*` 路径；当前入口在 `components/app/home/*`。
+- 把新首页、GridView、集合详情功能塞回旧的 `LocalMusicView`、`local/LocalPlaylistView` 或 `navidrome/*` 路径；当前入口在 `components/app/home/*` 与 `src/library/`（`suites/grid`、`app`）。
 - 通过“拆成很多空壳文件”伪装模块化；拆分后职责和依赖方向必须更清楚。
 - 为了省一次 import，继续向已有超大 visualizer、`VisPlayground` 或 `SettingsModal` 追加大段实现。
 

@@ -8,7 +8,7 @@
     "email": "chthollyphile@users.noreply.github.com"
   },
   "private": true,
-  "version": "0.7.13-android.20",
+  "version": "0.7.15-android.1",
   "license": "AGPL-3.0",
   "type": "module",
   "engines": {
@@ -50,6 +50,7 @@
     "@capacitor/core": "^8.4.2",
     "@capacitor/splash-screen": "^8.0.2",
     "@capacitor/status-bar": "^8.0.3",
+    "@neteasecloudmusicapienhanced/api": "^4.41.1",
     "axios": "^1.20.0",
     "bodian-music-api": "0.1.2",
     "fflate": "^0.8.3",
@@ -108,6 +109,9 @@
   },
   "overrides": {
     "@babel/plugin-transform-runtime": "7.29.7",
+    "concurrently": {
+      "shell-quote": "1.12.0"
+    },
     "@discordjs/rest": {
       "undici": "^6.27.0"
     },

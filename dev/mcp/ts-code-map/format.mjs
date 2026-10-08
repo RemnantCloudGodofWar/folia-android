@@ -97,6 +97,7 @@ export function refineKind(kind, sourceLine, name) {
 /** 影响面按目录归类，否则大符号的引用列表会刷屏。 */
 const AREA_RULES = [
     [/^src\/components\//, 'components'],
+    [/^src\/library\//, 'library'],
     [/^src\/hooks\//, 'hooks'],
     [/^src\/stores\//, 'stores'],
     [/^src\/services\//, 'services'],

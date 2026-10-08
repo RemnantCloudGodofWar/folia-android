@@ -22,7 +22,7 @@ The documentation defines the request contract. The live response defines the re
 
 Read the base URL from `.env.local` as `VITE_KUGOU_API_BASE`. Do not hardcode the deployed Vercel URL and do not print `.env.local` values. Electron normally uses its IPC bridge instead of this Web base URL; direct HTTP probing is for the configured Web service.
 
-Read development-only credentials from `test-results/.dev-credentials`. The file is intentionally plaintext and must remain local. Use this shape when normalizing a successful client login request or response:
+Read development-only credentials from `.dev-credentials/kugou.json`. Local development credentials all live in the git-ignored `.dev-credentials/` folder; never keep them under `test-results/`, which Playwright empties at the start of every test run. The file is intentionally plaintext and must remain local. Use this shape when normalizing a successful client login request or response:
 
 ```json
 {
@@ -77,4 +77,4 @@ When a live response changes or contradicts the docs, keep the raw capture under
 
 ## Probe script contract
 
-`scripts/probe-ku-gou.ps1` is the standard direct HTTP probe. It accepts `-Path`, `-Method GET|POST`, `-QueryJson`, `-BodyJson`, `-OutputPath`, `-TimeoutSec`, `-NoTimestamp`, and `-DryRun`. It reads only the repository's `.env.local` and `test-results/.dev-credentials`; never add credentials as command-line arguments because shell history and process listings may retain them.
+`scripts/probe-ku-gou.ps1` is the standard direct HTTP probe. It accepts `-Path`, `-Method GET|POST`, `-QueryJson`, `-BodyJson`, `-OutputPath`, `-TimeoutSec`, `-NoTimestamp`, and `-DryRun`. It reads only the repository's `.env.local` and `.dev-credentials/kugou.json`; never add credentials as command-line arguments because shell history and process listings may retain them.

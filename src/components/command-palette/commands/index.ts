@@ -2,6 +2,8 @@ import { assertExecuteShortcutsArePrefixFree } from '../executeShortcuts';
 import type { CommandPaletteCommand } from '../types';
 import { filterViewCommand } from './filterViewCommand';
 import { gridCommands } from './gridCommands';
+import { directoryCommands } from './directoryCommands';
+import { artistCommands } from './artistCommands';
 import { searchCommands } from './searchCommands';
 import { playbackCommands } from './playbackCommands';
 import { settingsCommands } from './settingsCommands';
@@ -76,6 +78,8 @@ const buildOpenHotkeyIndex = (commands: CommandPaletteCommand[]) => {
 export const ALL_COMMAND_PALETTE_COMMANDS: CommandPaletteCommand[] = assertExecuteShortcutsArePrefixFree(assertUniqueOpenHotkeys(assertUniqueCommandIds([
     filterViewCommand,
     ...gridCommands,
+    ...directoryCommands,
+    ...artistCommands,
     ...searchCommands,
     ...playbackCommands,
     ...settingsCommands,

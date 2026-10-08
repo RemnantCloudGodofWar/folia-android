@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SongResult } from '../../../src/types';
-import { resolveGridViewContextTracks } from '../../../src/components/folia-grid/gridViewContextActions';
+import { resolveGridViewContextTracks } from '../../../src/library/suites/grid/collection/gridViewContextActions';
 
 // test/unit/gridView/gridViewContextActions.test.ts
 

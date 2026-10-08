@@ -1,10 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const loadAudioSourceMock = vi.hoisted(() => vi.fn());
+const setAudioSrcMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@/services/onlinePlayback', () => ({
     loadOnlineSongAudioSource: loadAudioSourceMock,
     applyOnlineAudioSourceMetadata: (song: unknown) => song,
+}));
+vi.mock('@/stores/usePlaybackStore', () => ({
+    setAudioSrc: setAudioSrcMock,
+    setCurrentSong: vi.fn(),
+    setPlayQueue: vi.fn(),
 }));
 
 import {
@@ -35,7 +41,7 @@ const streamUrl = (vkey: string) =>
 const createController = (audioSrc: string) => {
     const lastAudioRecoverySourceRef = ref<string | null>(null);
     const audioRef = ref<HTMLAudioElement | null>({ currentTime: 0, currentSrc: audioSrc } as HTMLAudioElement);
-    const setAudioSrc = vi.fn();
+    const shouldAutoPlayRef = ref(false);
 
     const controller = createOnlineRecoveryController({
         audioQuality: 'high',
@@ -44,21 +50,18 @@ const createController = (audioSrc: string) => {
         audioRef,
         currentSongRef: ref<string | number | null>(getPlaybackSongKey(song)),
         blobUrlRef: ref<string | null>(null),
-        shouldAutoPlayRef: ref(false),
+        shouldAutoPlayRef,
         pendingResumeTimeRef: ref<number | null>(null),
         onlinePlaybackRecoveryRef: ref<Promise<boolean> | null>(null),
         lastAudioRecoverySourceRef,
         currentOnlineAudioUrlFetchedAtRef: ref<number | null>(null),
-        setAudioSrc,
-        setCurrentSong: vi.fn(),
-        setPlayQueue: vi.fn(),
         persistLastPlaybackCache: vi.fn(async () => undefined),
         playQueue: [song],
         onlineAudioUrlTtlMs: 60_000,
         onlineAudioUrlRefreshBufferMs: 5_000,
-    } as unknown as Parameters<typeof createOnlineRecoveryController>[0]);
+    });
 
-    return { controller, lastAudioRecoverySourceRef, setAudioSrc };
+    return { controller, lastAudioRecoverySourceRef, shouldAutoPlayRef };
 };
 
 describe('online playback recovery bounds', () => {
@@ -100,5 +103,36 @@ describe('online playback recovery bounds', () => {
         await expect(controller.recoverOnlinePlaybackSource({ failedSrc: streamUrl('two'), autoplay: true }))
             .resolves.toBe(true);
         expect(loadAudioSourceMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('commits a refreshed source without autoplay after pause during its fetch', async () => {
+        const { controller, shouldAutoPlayRef } = createController(streamUrl('one'));
+        let finish!: (result: { kind: string; audioSrc: string }) => void;
+        loadAudioSourceMock.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+        let wantsPlayback = true;
+        const recovery = controller.recoverOnlinePlaybackSource({
+            autoplay: true, shouldAutoplay: () => wantsPlayback,
+        });
+        wantsPlayback = false;
+        finish({ kind: 'ok', audioSrc: streamUrl('two') });
+        await expect(recovery).resolves.toBe(true);
+        expect(setAudioSrcMock).toHaveBeenCalledWith(streamUrl('two'));
+        expect(shouldAutoPlayRef.current).toBe(false);
+    });
+
+    it('honors a later resume before the pending refresh commits', async () => {
+        const { controller, shouldAutoPlayRef } = createController(streamUrl('one'));
+        let finish!: (result: { kind: string; audioSrc: string }) => void;
+        loadAudioSourceMock.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+        let wantsPlayback = true;
+        const recovery = controller.recoverOnlinePlaybackSource({
+            autoplay: true, shouldAutoplay: () => wantsPlayback,
+        });
+        wantsPlayback = false;
+        wantsPlayback = true;
+        finish({ kind: 'ok', audioSrc: streamUrl('two') });
+        await expect(recovery).resolves.toBe(true);
+        expect(setAudioSrcMock).toHaveBeenCalledWith(streamUrl('two'));
+        expect(shouldAutoPlayRef.current).toBe(true);
     });
 });

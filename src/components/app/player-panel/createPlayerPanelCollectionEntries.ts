@@ -3,7 +3,11 @@ import type { LocalSong, SongResult } from '../../../types';
 import type { LocalLibraryCatalogSnapshot } from '../../../hooks/useLocalLibraryCatalog';
 import type { CollectionNavigationOrigin } from '../../../stores/useCollectionNavigationStore';
 import type { GridViewCollectionDescriptor } from '../home/gridViewCollectionAdapters';
-import { buildLocalLibraryIndex, followEntityRedirect } from '../../../utils/localLibraryIndex';
+import {
+    buildLocalCatalogIndex,
+    resolveLocalCatalogLink,
+    resolveLocalSongEntityId,
+} from '../../../library/core/model/localCatalogLinks';
 import { isLocalPlaybackSong } from '../../../utils/appPlaybackGuards';
 import { getSongAlbumLabel, getSongArtistLabel, getSongCoverUrl } from '../../../services/onlineMusic/songMetadata';
 
@@ -41,79 +45,45 @@ export const createPlayerPanelCollectionEntries = ({
     navigateToCollection,
     t,
 }: PlayerPanelCollectionEntriesParams): PlayerPanelCollectionEntries => {
+    // 当前这首本地歌归属的专辑 / 歌手：解析规则与宿主的嵌套打开、歌手页同一份（core/model/localCatalogLinks）。
+    const resolveCurrentLocalLink = (kind: 'album' | 'artist', requestedEntityId?: string) => {
+        if (!currentSong || !isLocalPlaybackSong(currentSong)) return null;
+        const catalogIndex = buildLocalCatalogIndex(localLibraryCatalog);
+        const entityId = requestedEntityId || resolveLocalSongEntityId(catalogIndex, currentSong.localRef.songId, kind);
+        const link = resolveLocalCatalogLink(localLibraryCatalog, localSongs, { kind, entityId }, catalogIndex);
+        return link && link.songs.length > 0 ? link : null;
+    };
+
     const openCurrentLocalAlbum = () => {
-        if (currentSong && isLocalPlaybackSong(currentSong)) {
-            const catalogIndex = buildLocalLibraryIndex(
-                localLibraryCatalog.entities,
-                localLibraryCatalog.assignments,
-            );
-            const assignment = catalogIndex.assignmentsBySongId.get(currentSong.localRef.songId);
-            const albumEntityId = assignment?.albumEntityId
-                ? followEntityRedirect(assignment.albumEntityId, catalogIndex.entitiesById)
-                : undefined;
-            const albumEntity = albumEntityId
-                ? catalogIndex.entitiesById.get(albumEntityId)
-                : undefined;
-            if (albumEntity?.kind === 'album') {
-                const memberIds = new Set(localLibraryCatalog.assignments
-                    .filter(item => item.albumEntityId && (
-                        followEntityRedirect(item.albumEntityId, catalogIndex.entitiesById) === albumEntity.id
-                    ))
-                    .map(item => item.songId));
-                const songs = localSongs.filter(song => memberIds.has(song.id));
-                if (songs.length > 0) {
-                    navigateToCollection({
-                        source: 'local',
-                        id: albumEntity.id,
-                        entityId: albumEntity.id,
-                        name: albumEntity.displayName,
-                        type: 'album',
-                        coverUrl: getSongCoverUrl(displaySong),
-                        description: getSongArtistLabel(displaySong),
-                        trackCount: songs.length,
-                        songIds: songs.map(song => song.id),
-                    }, 'player');
-                }
-            }
-        }
+        const link = resolveCurrentLocalLink('album');
+        if (!link) return;
+        navigateToCollection({
+            source: 'local',
+            id: link.entity.id,
+            entityId: link.entity.id,
+            name: link.entity.displayName,
+            type: 'album',
+            coverUrl: getSongCoverUrl(displaySong),
+            description: getSongArtistLabel(displaySong),
+            trackCount: link.songs.length,
+            songIds: link.songs.map(song => song.id),
+        }, 'player');
     };
 
     const openCurrentLocalArtist = (requestedEntityId?: string) => {
-        if (currentSong && isLocalPlaybackSong(currentSong)) {
-            const catalogIndex = buildLocalLibraryIndex(
-                localLibraryCatalog.entities,
-                localLibraryCatalog.assignments,
-            );
-            const assignment = catalogIndex.assignmentsBySongId.get(currentSong.localRef.songId);
-            const sourceEntityId = requestedEntityId || assignment?.artistEntityIds[0];
-            const artistEntityId = sourceEntityId
-                ? followEntityRedirect(sourceEntityId, catalogIndex.entitiesById)
-                : undefined;
-            const artistEntity = artistEntityId
-                ? catalogIndex.entitiesById.get(artistEntityId)
-                : undefined;
-            if (artistEntity?.kind === 'artist') {
-                const memberIds = new Set(localLibraryCatalog.assignments
-                    .filter(item => item.artistEntityIds.some(entityId => (
-                        followEntityRedirect(entityId, catalogIndex.entitiesById) === artistEntity.id
-                    )))
-                    .map(item => item.songId));
-                const songs = localSongs.filter(song => memberIds.has(song.id));
-                if (songs.length > 0) {
-                    navigateToCollection({
-                        source: 'local',
-                        id: artistEntity.id,
-                        entityId: artistEntity.id,
-                        name: artistEntity.displayName,
-                        type: 'artist',
-                        coverUrl: getSongCoverUrl(currentSong),
-                        description: `${songs.length} ${t('home.songs')}`,
-                        trackCount: songs.length,
-                        songIds: songs.map(song => song.id),
-                    }, 'player');
-                }
-            }
-        }
+        const link = resolveCurrentLocalLink('artist', requestedEntityId);
+        if (!link) return;
+        navigateToCollection({
+            source: 'local',
+            id: link.entity.id,
+            entityId: link.entity.id,
+            name: link.entity.displayName,
+            type: 'artist',
+            coverUrl: getSongCoverUrl(currentSong),
+            description: `${link.songs.length} ${t('home.songs')}`,
+            trackCount: link.songs.length,
+            songIds: link.songs.map(song => song.id),
+        }, 'player');
     };
 
     const openCurrentNavidromeAlbum = () => {

@@ -7,7 +7,7 @@ import {
     HEX_CARD_MIN_OPACITY_DEFAULT,
     HEX_CARD_MIN_SCALE_BOUNDS,
     HEX_CARD_MIN_SCALE_DEFAULT,
-} from '../../folia-grid/hexCardTransform';
+} from '../../../utils/hexCardFalloff';
 import { useGridViewSettingsStore } from '../../../stores/useGridViewSettingsStore';
 
 // src/components/modal/settings/GridViewSettingsSection.tsx

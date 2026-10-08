@@ -8,6 +8,9 @@ import type { AppLanguagePreference } from '../../i18n/config';
 import type { PanelTab } from '../UnifiedPanel';
 import type { AppView, CommandFilterHandle } from '../../stores/useAppViewStore';
 import type { GridSurfaceHandle } from '../../types/gridCommandSurface';
+import type { LibraryDirectorySurfaceHandle } from '../../library/core/contracts/directory';
+import type { LibraryArtistSurfaceHandle } from '../../library/core/contracts/artist';
+import type { LibrarySuiteChromeHandle } from '../../library/core/contracts/suiteChrome';
 import { type SettingsModalInitialTab, type SettingsSubviewId, type VisualizerSettingsSection } from '../../stores/useSettingsModalStore';
 import type { SettingsAnchorId } from '../modal/settings/navigation/settingsAnchorModel';
 import type { LyricStaffAbsorbMode, LyricStaffPolicy } from '../../utils/lyrics/staffCreditsPolicy';
@@ -36,7 +39,7 @@ export type CommandPaletteGroup = 'search' | 'settings' | 'navigation' | 'panel'
  * only offer a global shortcut a command that works from anywhere, and anything else that asks
  * "would this be reachable if I were somewhere else".
  */
-export type CommandScope = 'player-surface' | 'filtering-surface' | 'lattice' | 'grid-surface';
+export type CommandScope = 'player-surface' | 'filtering-surface' | 'lattice' | 'grid-surface' | 'directory-surface' | 'artist-surface' | 'suite-chrome';
 
 export type CommandPaletteSearchSource = SearchSource;
 
@@ -54,6 +57,12 @@ export type CommandPaletteCommand = {
     platform?: CommandPlatform[];
     /** Surface gating: which surroundings the command needs. Omitted means anywhere. */
     scope?: CommandScope;
+    /**
+     * Who the scope belongs to, for scopes only one owner can hold at a time: a `suite-chrome` command names
+     * the library suite that declared it. Two commands of such a scope with different owners are never
+     * offered together, so they may share an execute shortcut (see executeShortcuts.ts).
+     */
+    scopeOwner?: string;
     /** State gating: whether the command is worth offering right now. */
     isAvailable?: (context?: CommandPaletteContext) => boolean;
     /** Kept out of match results, the all-commands list, and the pinned-command picker. */
@@ -212,6 +221,14 @@ export type CommandPaletteSettingsContext = {
     /** Which surface pressing play opens; see usePlaybackEntryViewStore. */
     playbackEntryView: PlaybackEntryView;
     setPlaybackEntryView: (view: PlaybackEntryView) => void;
+    /** Library UI suites offered as a choice (registry order, default suite first). */
+    librarySuiteOptions: () => ReadonlyArray<{ id: string; labelKey: string }>;
+    /** The suite actually rendering: the stored choice resolved through the registry, never a suite this build lacks. */
+    activeLibrarySuite: () => string;
+    /** Same predicate the settings section hides itself with: more than one suite is available. */
+    canChooseLibrarySuite: () => boolean;
+    /** Switches suites the way the settings section does (current session key + switchLibrarySuite). */
+    chooseLibrarySuite: (suiteId: string) => void;
     ponderHintVisibility: PonderHintVisibility;
     setPonderHintVisibility: (visibility: PonderHintVisibility) => void;
     /** 触屏上那颗思索按钮显不显示。它是触屏唯一的入口，所以关掉是一个明确的选择。 */
@@ -373,6 +390,22 @@ export type CommandPaletteScopeContext = {
      * choice, its two panels — plus the collection maintenance its own branch allows.
      */
     grid: GridSurfaceHandle | null;
+    /**
+     * The home directory on screen (the grid's GridMap), if any: its batch selection and hidden view.
+     * Separate from `grid` — a directory selects cards, a track grid sorts and maintains a collection.
+     */
+    directory: LibraryDirectorySurfaceHandle | null;
+    /**
+     * The artist page on screen, if any: its top songs, reload / album retry and local entity editing.
+     * Separate from `grid` — an artist page has no track list to sort or maintain.
+     */
+    artist: LibraryArtistSurfaceHandle | null;
+    /**
+     * The library suite whose own chrome is on screen, if any (B2): its suite-only actions — seam levels,
+     * panels, locating the playing song — declared in the suite manifest's `chromeActions`. Registered by
+     * the suite while interactive (useLibrarySuiteChromeRegistration); only that suite's commands apply.
+     */
+    chrome: LibrarySuiteChromeHandle | null;
 };
 
 // Namespaces mirror CommandPaletteGroup one-to-one (plus `shared` and `scope`), so a command's

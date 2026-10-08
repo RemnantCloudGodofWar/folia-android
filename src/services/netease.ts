@@ -42,8 +42,12 @@ export const getConfiguredApiBase = () => {
   return null;
 };
 
-// Thrown when the Electron backend is not listening. The QR login modal keys its "restart backend"
-// overlay off this, so it must stay distinguishable from an ordinary request failure.
+/** 网页版配置的远端 API 地址（自检与诊断报告用）；桌面版走内嵌后端，返回 null。 */
+export const getNeteaseRemoteApiBase = (): string | null => (isElectronRuntime() ? null : getConfiguredApiBase());
+
+// Thrown (as the error's `code`, and at the start of its message) when the Electron backend is not
+// listening, so it stays distinguishable from an ordinary request failure. The message carries the
+// backend's own status and error, which is what the QR login timeline needs to say why.
 export const NETEASE_API_UNAVAILABLE = 'NETEASE_API_UNAVAILABLE';
 
 const NETEASE_PORT_POLL_INTERVAL_MS = 250;
@@ -56,17 +60,17 @@ const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, m
 // The Electron backend no longer blocks window creation, so the renderer can outrun it. Wait while
 // it is still starting, but return null the moment it reports a failure — the login modal turns
 // that into a restart button rather than another opaque request error.
-const waitForNeteasePort = async (bridge: any): Promise<number | null> => {
+const waitForNeteasePort = async (bridge: any): Promise<{ port: number | null; status: ElectronNeteaseApiStatus | null }> => {
   const deadline = Date.now() + NETEASE_PORT_WAIT_TIMEOUT_MS;
 
   for (;;) {
     const port = await bridge.getNeteasePort();
-    if (Number.isInteger(port) && port > 0) return port;
+    if (Number.isInteger(port) && port > 0) return { port, status: null };
 
     const status = typeof bridge.getNeteaseApiStatus === 'function'
       ? await bridge.getNeteaseApiStatus()
       : null;
-    if (status?.status !== 'starting' || Date.now() >= deadline) return null;
+    if (status?.status !== 'starting' || Date.now() >= deadline) return { port: null, status };
 
     await delay(NETEASE_PORT_POLL_INTERVAL_MS);
   }
@@ -78,9 +82,13 @@ const getApiBase = async () => {
   // renderer to the dead default port for the rest of the session, so every online feature kept
   // failing with a bare network error long after the backend recovered.
   if (isElectronRuntime()) {
-    const port = await waitForNeteasePort(getElectronBridge());
+    const { port, status } = await waitForNeteasePort(getElectronBridge());
     if (port === null) {
-      throw new Error(NETEASE_API_UNAVAILABLE);
+      const state = status?.status ?? 'unknown';
+      throw Object.assign(
+        new Error(`${NETEASE_API_UNAVAILABLE}: local NetEase API is ${state}${status?.error ? ` (${status.error})` : ''}`),
+        { code: NETEASE_API_UNAVAILABLE },
+      );
     }
     // 必须是 127.0.0.1 而不是 localhost：本地 API 只监听 IPv4 回环（见 electron/main.cjs 的 startApi），
     // 有公网 IPv6 的机器上 localhost 会先解析到 ::1。
@@ -183,8 +191,23 @@ const fetchWithCreds = async (endpoint: string, options: RequestInit = {}) => {
     finalUrl = `${finalUrl}${sep}cookie=${encodeURIComponent(cookieToUse)}`;
   }
 
-  const res = await fetch(finalUrl, { ...defaultOptions, credentials: 'include' });
-  const data = await res.json();
+  const target = endpoint.split('?')[0];
+  let res: Response;
+  try {
+    res = await fetch(finalUrl, { ...defaultOptions, credentials: 'include' });
+  } catch (error) {
+    // 连 API 本身都没连上（本地后端退出、远端 API 不可达），不是网易上游的失败：说清是哪个接口，原始错误挂在 cause 上。
+    throw new Error(`NetEase API request ${target} failed: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+  }
+  // 照旧不看 HTTP 状态（错误也以 JSON 的 code 返回，调用方看 code）；只是正文不是 JSON 时，
+  // 报出状态码与正文开头，而不是一句看不出来源的 SyntaxError。
+  const body = await res.text();
+  let data: any;
+  try {
+    data = JSON.parse(body);
+  } catch {
+    throw new Error(`NetEase API ${target} returned HTTP ${res.status} without a JSON body: ${body.slice(0, 200) || '(empty)'}`);
+  }
 
   if (!storedCookie && cookieToUse && (data?.code === 301 || data?.code === 401 || data?.code === 403)) {
     removeProviderSessionValue('netease', 'anonymous_cookie', ['netease_anonymous_cookie']);

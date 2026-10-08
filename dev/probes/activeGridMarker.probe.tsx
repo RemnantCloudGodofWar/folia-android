@@ -1,6 +1,6 @@
 import React from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import ActiveGridMarker from '../../src/components/folia-grid/ActiveGridMarker';
+import ActiveGridMarker from '../../src/library/suites/grid/shared/ActiveGridMarker';
 import type { ProbeDefinition } from './definition';
 // dev/probes/activeGridMarker.probe.tsx
 

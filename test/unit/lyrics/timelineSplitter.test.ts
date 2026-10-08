@@ -70,4 +70,45 @@ describe('timelineSplitter', () => {
         expect(main).toBe(singleStream);
         expect(trans).toBe('');
     });
+
+    it('keeps a line in the main stream when a blank end marker shares its timestamp', () => {
+        const withEndMarkers = [
+            '[00:10.00]是否对你承诺了太多',
+            '[00:13.00]   ',
+            '[00:13.00]还是我原本给的就不够',
+            '[00:17.00]',
+            '[00:17.00]你始终有千万种理由',
+            '[00:20.00]',
+        ].join('\n');
+
+        const { main, trans } = splitCombinedTimeline(withEndMarkers);
+
+        expect(main).toBe(withEndMarkers);
+        expect(trans).toBe('');
+    });
+
+    it('ignores blank end markers inside bilingual LRC', () => {
+        const combined = [
+            '[00:10.00]   ',
+            '[00:10.00]Hoo hoo hoo hey',
+            '[00:16.00]I ain\'t like no one you met before',
+            '[00:16.00]我和你之前遇见的所有人都不一样',
+            '[00:20.00]I\'m running for the front',
+            '[00:20.00]我会奋勇向前 全力奔跑',
+            '[00:22.00]',
+        ].join('\n');
+
+        const { main, trans } = splitCombinedTimeline(combined);
+
+        expect(main).toBe([
+            '[00:10.00]Hoo hoo hoo hey',
+            '[00:16.00]I ain\'t like no one you met before',
+            '[00:20.00]I\'m running for the front',
+            '[00:22.00]',
+        ].join('\n'));
+        expect(trans).toBe([
+            '[00:16.00]我和你之前遇见的所有人都不一样',
+            '[00:20.00]我会奋勇向前 全力奔跑',
+        ].join('\n'));
+    });
 });

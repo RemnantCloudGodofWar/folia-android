@@ -5,11 +5,12 @@ import { createFakeFadeGraph, type FakeFadeGraph } from '../services/fakeFadeGra
 // test/unit/hooks/usePlaybackTransportFade.test.ts
 // pausePlayback / resumePlayback wired to the real fade controller: what the transport does with the
 // element, the player state and the pending pause across quick toggles, track changes and blends.
-// Same node-environment approach as usePersonalFmModeController.test.ts - the hook only needs
-// useCallback, so that is the one thing replicated.
+// Keep refs scoped to each transport instance; lifecycle cleanup is covered by the mounted-hook tests.
 
 vi.mock('react', () => ({
     useCallback: (callback: unknown) => callback,
+    useRef: (value: unknown) => ({ current: value }),
+    useEffect: () => {},
 }));
 vi.mock('react-i18next', async importOriginal => ({
     ...(await importOriginal<typeof import('react-i18next')>()),

@@ -16,14 +16,10 @@ import { toSafePlaybackUrl } from '../../utils/appPlaybackHelpers';
 import { fetchQQLyrics, searchQQLyrics } from '../../utils/lyrics/providers/qqLyricProvider';
 import { writeProviderSessionValue } from './providerStorage';
 import { normalizeQqCollection, normalizeQqSong, normalizeQqUser } from './qqNormalize';
-import { noteLibraryStep } from '../../nativeBridge/api/libraryTrace.js';
-import {
-    clearQqSession,
-    getQqTransportAvailability,
-    hasQqExtensionSession,
-    hasQqSession,
-    requestQq,
-} from './qqTransport';
+import { clearQqSession, getQqRemoteApiBase, getQqTransportAvailability, hasQqSession, requestQq } from './qqTransport';
+import { collectLoginBackendDiagnostics } from './loginBackendDiagnostics';
+import { canRunLoginSelfCheck, runLoginSelfCheck } from './loginSelfCheck';
+import { formatDiagnosticClock } from '../../utils/qrLoginDiagnosticReport';
 
 // src/services/onlineMusic/qqProvider.ts
 
@@ -112,6 +108,7 @@ let ownedPlaylistRouteMissing = false;
 
 export const resetQqProviderRuntimeCache = (): void => {
     ownedPlaylistRouteMissing = false;
+    lastLoginStatusCheck = null;
 };
 
 /**
@@ -158,13 +155,6 @@ const loadRawLikedTracks = async (
     const response = await requestQq<any>('user_liked_songs', { offset, limit });
     const tracks = Array.isArray(response?.songs) ? response.songs : [];
     const total = Number(response?.total);
-    noteLibraryStep('qq', 'frontend:liked-tracks', {
-        offset,
-        limit,
-        tracks: tracks.length,
-        total: Number.isFinite(total) ? total : undefined,
-        more: response?.more === true,
-    });
     return {
         tracks,
         ...(Number.isFinite(total) && total >= 0 ? { total } : {}),
@@ -354,25 +344,38 @@ const getLyrics = async (song: SongResult): Promise<ProviderLyricsResult> => {
     return { lyrics: lyrics ?? null, isPureMusic: false };
 };
 
+// 最近一次登录态检查的结论。扫码确认后账户没加载出来（account-refresh-failed）时，报告靠它说明卡在哪：
+// 没存下 session、后端不认这个 session、还是请求本身失败。
+let lastLoginStatusCheck: string | null = null;
+const noteLoginStatusCheck = (summary: string): void => {
+    lastLoginStatusCheck = `${formatDiagnosticClock(Date.now())} ${summary}`;
+};
+
 const getLoginStatus = async (): Promise<ProviderUser | null> => {
     // No opaque backend session means the account cannot be authenticated, so the startup request is skipped.
-    if (!hasQqSession()) return null;
+    if (!hasQqSession()) {
+        noteLoginStatusCheck('no backend session stored');
+        return null;
+    }
 
     try {
         const response = await requestQq<any>('login_status');
         const profile = response?.data?.profile;
         if (!profile) {
+            noteLoginStatusCheck('login_status: the backend does not recognize the stored session');
             console.info('[QQProvider] login-status:anonymous');
             return null;
         }
         const user = normalizeQqUser(profile);
         // The acceptance test account returned a profile without a display name, so the profile itself is the signal.
+        noteLoginStatusCheck(`signed in (user id ${user.id ? 'present' : 'missing'}, nickname ${user.nickname ? 'present' : 'missing'})`);
         console.info('[QQProvider] login-status:profile', {
             hasUserId: Boolean(user.id),
             hasNickname: Boolean(user.nickname),
         });
         return user;
     } catch (error) {
+        noteLoginStatusCheck(`login_status failed: ${errorFields(error).message}`);
         // Missing, expired, rejected, or non-persisted backend sessions all arrive as 401.
         if (error instanceof OnlineProviderError && error.code === 'auth-required') {
             console.info('[QQProvider] login-status:auth-required');
@@ -478,17 +481,31 @@ const getAvailability = (): ReturnType<typeof getQqTransportAvailability> => {
 // 二维码失效时用户看到的是可重试的「已过期」，而不是一个还在轮询的死码。
 const QQ_QR_TTL_MS = 175_000;
 
-// 扩展 / Android 内置桥才有的分步追踪；其他后端没有这份记录，返回空数组即可。
-const collectQqQrLoginDiagnostics = async (): Promise<string[]> => {
-    if (!hasQqExtensionSession()) return [];
-    try {
-        const module = await import('../../nativeBridge/api/qrLoginTrace.js');
-        return module.getQrLoginTraceLines('qq');
-    } catch (error) {
-        return [`qq trace unavailable: ${error instanceof Error ? error.message : String(error)}`];
+// qq-music-api 在扫码失败时附带的结构化字段：失败阶段与原因、上游的 HTTP 状态与返回码、退避时长、上一次失败。
+const QR_FAILURE_FIELDS = [
+    'failureStage', 'failureReason', 'upstreamHttpStatus', 'upstreamCode', 'upstreamGlobalCode', 'upstreamSubCode',
+    'retryAfterMs', 'lastFailure',
+] as const;
+
+/** 失败响应的原始字段（原样进诊断时间线）。 */
+const qrFailureDetail = (response: any): Record<string, unknown> => {
+    const detail: Record<string, unknown> = { code: response?.code ?? null };
+    if (typeof response?.message === 'string' && response.message) detail.message = response.message;
+    for (const field of QR_FAILURE_FIELDS) {
+        if (response?.[field] !== undefined) detail[field] = response[field];
     }
+    return detail;
 };
 
+// 自然过期只认结构化字段：3.1.3 的 failureReason=qr-timeout，或会话已被清掉（过期、取消）时后端回的、
+// 不带任何失败字段的 800。不比对后端文案。
+const isQrNaturalExpiry = (response: any): boolean => (
+    response?.failureReason === 'qr-timeout'
+    || ['failureStage', 'failureReason', 'upstreamCode', 'retryAfterMs'].every(field => response?.[field] === undefined)
+);
+
+// 后端把 QQ / 微信的原生扫码状态翻译成网易的那套码值：801 等待、802 已扫、803 确认（带 session）、800 过期或失败。
+// 800 靠结构化字段区分过期与失败（上游拒绝、MQTT 断开、凭据交换失败、手机上取消……）；失败与别的返回码都原样交给会话。
 const checkQr = async (key: string): Promise<QrLoginState> => {
     const response = await requestQq<any>('login_qr_check', { key });
     const code = Number(response?.code);
@@ -501,18 +518,22 @@ const checkQr = async (key: string): Promise<QrLoginState> => {
         }
         return { state: 'confirmed' };
     }
-    if (code === 800) {
-        // 800 also carries an upstream rejection; `upstreamCode` is the upstream safety number, left unnamed.
-        if (response?.upstreamCode !== undefined || response?.retryAfterMs !== undefined) {
-            console.warn('[QQProvider] qr-check:upstream-rejected', {
-                upstreamCode: response?.upstreamCode,
-                retryAfterMs: response?.retryAfterMs,
-            });
-            return { state: 'error', message: response?.message };
-        }
-        return { state: 'expired' };
-    }
-    return { state: 'error', message: response?.message };
+    if (code === 800 && isQrNaturalExpiry(response)) return { state: 'expired' };
+
+    const retryAfterMs = Number.isSafeInteger(response?.retryAfterMs) && response.retryAfterMs >= 0
+        ? response.retryAfterMs as number
+        : undefined;
+    const stage = typeof response?.failureStage === 'string'
+        ? ` (stage ${response.failureStage}, reason ${typeof response?.failureReason === 'string' ? response.failureReason : 'unknown'})`
+        : '';
+    return {
+        state: 'error',
+        message: `code ${response?.code ?? 'none'}: ${typeof response?.message === 'string' && response.message ? response.message : 'no message'}${stage}`,
+        // 手机上取消是用户自己的操作：交给会话的是结构化原因，界面据此不给诊断入口；冷却时长一并交出，重试暂缓。
+        ...(response?.failureReason === 'user-canceled' ? { reason: 'canceled-on-device' as const } : {}),
+        ...(retryAfterMs === undefined ? {} : { retryAfterMs }),
+        detail: qrFailureDetail(response),
+    };
 };
 
 // `/user/playlist` returns the whole GetPlaylistByUin list and takes no upstream paging parameters,
@@ -524,14 +545,8 @@ const getUserPlaylists = async (
 ): Promise<ProviderPage<ProviderCollection>> => {
     // 不传 `uid`：会话账号是这条 route 唯一读得到的账号，而后端从凭据里挑出来的账号 ID 比前端
     // 手上这个展示用的可靠 —— 微信凭据的 `musicid` 是占位的 0，回传它只会让自建歌单整段消失。
-      const response = await requestQq<any>('user_playlist', {});
-      const playlists = Array.isArray(response?.playlist) ? response.playlist : [];
-      noteLibraryStep('qq', 'frontend:playlists', {
-          offset,
-          limit,
-          playlists: playlists.length,
-          code: response?.code,
-      });
+    const response = await requestQq<any>('user_playlist', {});
+    const playlists = Array.isArray(response?.playlist) ? response.playlist : [];
     const items = playlists
         .slice(offset, offset + Math.max(0, limit))
         .map((item: unknown) => normalizeQqCollection(item));
@@ -565,12 +580,10 @@ const getLikedSongIds = async (_userId: MediaId): Promise<MediaId[]> => {
             break;
         offset = nextOffset;
     }
-    const ids = tracks
+    return tracks
         .map(normalizeQqSong)
         .map(item => item.sourceRef?.kind === 'online' ? item.sourceRef.mediaId : item.id)
         .filter((id): id is MediaId => id !== undefined && id !== null && id !== '');
-    noteLibraryStep('qq', 'frontend:liked-ids', { tracks: tracks.length, ids: ids.length });
-    return ids;
 };
 
 const getUserAlbums = async (
@@ -762,27 +775,36 @@ export const qqProvider: OnlineMusicProvider = {
         logout,
         getQrLoginMethods,
         resolveQrLoginMethods,
+        // 要码与生成二维码失败时，transport 的错误已带着 HTTP 状态、后端原文（含失败阶段与原因）与退避时长；
+        // 没拿到 key 或图片就直接失败：空 key 只会换来后端的 400，空图片会让界面一直转圈。
         async getQrKey(methodId) {
-            const response = await requestQq<any>('login_qr_key', {
-                channel: resolveQrLoginMethodId(methodId),
-            });
-            return String(response?.data?.unikey || '');
+            const response = await requestQq<any>('login_qr_key', { channel: resolveQrLoginMethodId(methodId) });
+            const key = String(response?.data?.unikey || '');
+            if (key.trim()) return key;
+            throw new OnlineProviderError('invalid-response', 'QQMusicApi login_qr_key returned no key', 'qq', response);
         },
         async createQr(key) {
             const response = await requestQq<any>('login_qr_create', { key });
-            return String(response?.data?.qrimg || '');
+            const image = String(response?.data?.qrimg || '');
+            if (image.trim()) return image;
+            throw new OnlineProviderError('invalid-response', 'QQMusicApi login_qr_create returned no image', 'qq', response);
         },
         checkQr,
+        async getQrLoginDiagnostics() {
+            return collectLoginBackendDiagnostics('qq', [
+                `session: backend session stored=${hasQqSession() ? 'yes' : 'no'}`,
+                `login channels: ${declaredChannels ? declaredChannels.join(', ') : 'not declared by the backend'}`,
+                `last account check: ${lastLoginStatusCheck ?? 'none'}`,
+            ], getQqRemoteApiBase());
+        },
+        canRunQrLoginSelfCheck: () => canRunLoginSelfCheck(getQqRemoteApiBase()),
+        runQrLoginSelfCheck: () => runLoginSelfCheck('qq', getQqRemoteApiBase()),
         getQrTtlMs: () => QQ_QR_TTL_MS,
-        getQrLoginDiagnostics: collectQqQrLoginDiagnostics,
         async cancelQr(key) {
             // 后端对未知 key 也回 200，所以失败只可能是网络层。调用方在关窗时 fire-and-forget，
             // 抛出去只会让 UI 卡在一个用户无从处理的错误上，而残留会话最迟 3 分钟后自己过期。
             await requestQq('login_qr_cancel', { key }).catch(error => {
-                console.warn('[QQProvider] qr-cancel:failed', {
-                    name: error instanceof Error ? error.name : 'Error',
-                    message: error instanceof Error ? error.message : String(error),
-                });
+                console.warn('[QQProvider] qr-cancel:failed', errorFields(error));
             });
         },
     },

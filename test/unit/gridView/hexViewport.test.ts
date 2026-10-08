@@ -9,7 +9,7 @@ import {
     roundCube,
     toCubeKey,
     type HexGridCoord,
-} from '../../../src/components/folia-grid/hexViewport';
+} from '../../../src/library/suites/grid/shared/hexViewport';
 
 // Unit coverage for GridView hex viewport math.
 const buildCoords = (radius: number, spacingX = 250, spacingY = 320): HexGridCoord[] => {

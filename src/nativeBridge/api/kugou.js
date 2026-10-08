@@ -1425,6 +1425,97 @@ function buildKGTrackerKey(hash, mid, userId, appid) {
   return md5(`${hash}57ae12eb6890223e355ccfcb74edf70d${appid}${mid}${userId}`);
 }
 
+function buildKGLiteTrackerKey(hash, mid, userId) {
+  hash = String(hash || '').trim().toLowerCase();
+  userId = String(userId || '0').replace(/\D/g, '') || '0';
+  return md5(`${hash}185672dd44712f60bb1736df5a377e82${KG_LITE_APPID}${mid}${userId}`);
+}
+
+/**
+ * Fast path copied from KuGouMusicApi v1.6.0 `module/song_url.js`.
+ *
+ * The upstream PC build uses the concept/lite client parameters here and skips the regular
+ * signature (`notSign`) while still adding the lite `key`. Keeping this request first avoids
+ * waiting on the older fallback probes when the account already has the reward entitlement.
+ */
+async function fetchKGLiteSongUrl(hash, albumId, albumAudioId, cookieHeader, quality) {
+  hash = String(hash || '').trim().toLowerCase();
+  if (!hash) return '';
+  cookieHeader = await enrichKGCookieHeader(cookieHeader, { preferAppToken: true });
+  const userId = kgCookieUserId(cookieHeader) || '0';
+  const token = kgCookieToken(cookieHeader) || '';
+  if (!userId || userId === '0' || !token) return '';
+  const mid = await getKGMid(cookieHeader);
+  const dfid = kgCookieDfid(cookieHeader) || kgRandomString(24);
+  const clienttime = Math.floor(Date.now() / 1000);
+  const params = {
+    album_id: Number(albumId) || 0,
+    area_code: 1,
+    hash,
+    ssa_flag: 'is_fromtrack',
+    version: KG_TRACKER_CLIENTVER,
+    page_id: 967177915,
+    quality: quality || 128,
+    album_audio_id: Number(albumAudioId) || 0,
+    behavior: 'play',
+    pid: 411,
+    cmd: 26,
+    pidversion: 3001,
+    IsFreePart: 0,
+    ppage_id: '356753938,823673182,967485191',
+    cdnBackup: 1,
+    module: '',
+    clientver: KG_TRACKER_CLIENTVER,
+    dfid,
+    mid,
+    uuid: '-',
+    appid: KG_LITE_APPID,
+    clienttime,
+    token,
+    userid: userId,
+  };
+  params.key = buildKGLiteTrackerKey(hash, mid, userId);
+  const qs = Object.keys(params)
+    .map((key) => `${encodeURIComponent(key)}=${encodeURIComponent(params[key])}`)
+    .join('&');
+  const url = `https://gateway.kugou.com/v5/url?${qs}`;
+  const startedAt = Date.now();
+  noteLibraryStep('kugou', 'url:http:start', { name: 'lite-v5', host: 'gateway.kugou.com' });
+  try {
+    const body = await kgFetchJSON(url, {
+      mobile: true,
+      referer: 'https://www.kugou.com/',
+      headers: {
+        Cookie: buildKGLeanCookie(cookieHeader),
+        'User-Agent': KG_ANDROID_UA,
+        dfid: String(dfid),
+        clienttime: String(clienttime),
+        mid: String(mid),
+        'kg-rc': '1',
+        'kg-thash': '5d816a0',
+        'kg-rec': '1',
+        'kg-rf': 'B9EDA08A64250DEFFBCADDEE00F8F25F',
+        'x-router': 'trackercdn.kugou.com',
+      },
+    });
+    noteLibraryStep('kugou', 'url:http:done', {
+      name: 'lite-v5',
+      host: 'gateway.kugou.com',
+      ms: Date.now() - startedAt,
+      status: body && body.status,
+    });
+    return parseKGPlayUrl(body);
+  } catch (error) {
+    noteLibraryStep('kugou', 'url:http:error', {
+      name: 'lite-v5',
+      host: 'gateway.kugou.com',
+      ms: Date.now() - startedAt,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return '';
+  }
+}
+
 async function fetchKGTrackerV5Url(hash, albumId, albumAudioId, cookieHeader, loginVipType, quality) {
   hash = String(hash || '').trim().toLowerCase();
   if (!hash) return { url: '', status: 0, blocked: false };
@@ -2472,8 +2563,9 @@ async function fetchKGTrackerUrl(hash, albumId, albumAudioId, cookieHeader, logi
  * 这样既能保证一定会返回，也能看出是哪一条拖住了。
  */
 const KG_PLAY_STRATEGY_DEADLINE_MS = 12000;
+const KG_LITE_SONG_URL_DEADLINE_MS = 1800;
 
-async function runKGPlayStrategy(name, run) {
+async function runKGPlayStrategy(name, run, deadlineMs = KG_PLAY_STRATEGY_DEADLINE_MS) {
   const startedAt = Date.now();
   noteLibraryStep('kugou', 'url:strategy:start', { name });
   let timer = null;
@@ -2481,7 +2573,7 @@ async function runKGPlayStrategy(name, run) {
     const result = await Promise.race([
       Promise.resolve().then(run),
       new Promise((resolve) => {
-        timer = setTimeout(() => resolve({ __timedOut: true }), KG_PLAY_STRATEGY_DEADLINE_MS);
+        timer = setTimeout(() => resolve({ __timedOut: true }), deadlineMs);
       }),
     ]);
     const ms = Date.now() - startedAt;
@@ -2506,6 +2598,13 @@ async function runKGPlayStrategy(name, run) {
 async function resolveKGSongPlayUrl(hash, albumId, albumAudioId, cookieHeader, login, qualityCode) {
   const vipType = login && login.vipType;
   const q = Number(qualityCode) || 128;
+  const fastHit = await runKGPlayStrategy(
+    'lite-v5',
+    () => fetchKGLiteSongUrl(hash, albumId, albumAudioId, cookieHeader, q)
+      .then((url) => (url ? { url, source: 'lite-v5' } : null)),
+    KG_LITE_SONG_URL_DEADLINE_MS,
+  );
+  if (fastHit && fastHit.url) return fastHit;
   const tasks = [
     () => runKGPlayStrategy('v5', () => fetchKGTrackerV5Url(hash, albumId, albumAudioId, cookieHeader, vipType, q)
       .then((result) => (result.url ? { url: result.url, source: 'v5', tracker: result } : null))),

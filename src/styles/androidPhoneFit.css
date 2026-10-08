@@ -145,8 +145,49 @@ html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [dat
 }
 
 html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-ponder='player-bar'] {
-  max-height: 42px;
-  padding: 5px 10px !important;
+  max-height: 46px;
+  padding: 4px 10px !important;
+}
+
+/* The landscape phone viewport is wide and short; the desktop-sized expanded capsule reads as
+   an oversized bar. Keep it comfortably centered and leave the collapsed pill untouched. */
+html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-folia-player-bar-expanded='true'] {
+  width: min(82vw, 28rem) !important;
+  max-width: min(82vw, 28rem) !important;
+}
+
+html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-folia-player-bar-expanded='true'] > div {
+  column-gap: 8px !important;
+  row-gap: 2px !important;
+}
+
+html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-folia-player-bar-play='true'] {
+  width: 36px !important;
+  height: 36px !important;
+}
+
+html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-folia-player-bar-play='true'] svg {
+  width: 16px;
+  height: 16px;
+}
+
+html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-folia-player-bar-slot='true'] {
+  padding: 4px !important;
+}
+
+html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-folia-player-bar-slot='true'] svg {
+  width: 16px !important;
+  height: 16px !important;
+}
+
+html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-folia-player-bar-title='true'] {
+  padding-inline: 0 !important;
+  font-size: 12px !important;
+  line-height: 1.15 !important;
+}
+
+html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-folia-player-bar-progress='true'] {
+  padding-inline: 0 !important;
 }
 
 html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-ponder='player-bar'] button {

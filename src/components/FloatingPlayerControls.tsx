@@ -390,6 +390,7 @@ const FloatingPlayerControls: React.FC<FloatingPlayerControlsProps> = ({
                         // 经外层 lift 表达，再让 drag 往这个节点写一份 y 会叠加成两倍位移；
                         // 而且 dragConstraints 依赖的起始值放在 ref 里不会触发重渲染，读到的会是上一帧的。
                         data-ponder="player-bar"
+                        data-folia-player-bar-expanded={showExpanded ? 'true' : 'false'}
                         onPointerDown={handlePositionDragStart}
                         onPointerMove={handlePositionDragMove}
                         onPointerUp={handlePositionDragEnd}
@@ -526,7 +527,10 @@ const ExpandedView: React.FC<ExpandedViewProps> = ({
             {/* Desktop Layout - responsive grid positions apply from the sm breakpoint */}
             {/* Mobile Layout - base grid positions apply below the sm breakpoint */}
             {/* Row 1: Centered Title */}
-            <div className="col-span-3 row-start-1 min-w-0 px-2 sm:col-start-2 sm:col-span-1">
+            <div
+                data-folia-player-bar-title="true"
+                className="col-span-3 row-start-1 min-w-0 px-2 sm:col-start-2 sm:col-span-1"
+            >
                 {trackNavigation ? (
                     <TrackTitleNavigator
                         title={currentSong?.name || noTrackText}
@@ -552,6 +556,7 @@ const ExpandedView: React.FC<ExpandedViewProps> = ({
 
             {/* Row 3: Loop Button, Play Button, Lyrics Button */}
             <button
+                data-folia-player-bar-play="true"
                 onClick={(e) => {
                     e.stopPropagation();
                     onTogglePlay();
@@ -592,7 +597,10 @@ const ExpandedView: React.FC<ExpandedViewProps> = ({
             </div>
 
             {/* Row 2: Current Time, Progress Bar, Duration */}
-            <div className="col-span-3 row-start-3 w-full px-2 sm:col-start-2 sm:col-span-1 sm:row-start-2">
+            <div
+                data-folia-player-bar-progress="true"
+                className="col-span-3 row-start-3 w-full px-2 sm:col-start-2 sm:col-span-1 sm:row-start-2"
+            >
                 <ProgressBar
                     currentTime={currentTime}
                     duration={duration}

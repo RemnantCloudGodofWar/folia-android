@@ -41,6 +41,7 @@ const KG_COOKIE_KEYS = [
   'vip_type', 'vip_token', 'VIPType', 'VipType', 'musicvip', 'MusicPack', 'musicpack', 'is_vip',
   'IsVIP', 'isVIP', 'su_vip', 'm_type', 'y_type', 'music_vip', 'VipLevel', 'vip_level',
   'vip_endtime', 'vip_end_time', 'su_vip_end_time', 'm_end_time',
+  'KUGOU_API_PLATFORM', 'KUGOU_API_GUID', 'KUGOU_API_MID', 'KUGOU_API_DEV', 'KUGOU_API_MAC', 'KUGOU_API_WEBGL',
 ];
 const NETEASE_KEY_NAMES = ['MUSIC_U', 'MUSIC_A', '__csrf', 'NMTID', 'WNMCID', 'WEVNSM', '_ntes_nuid', '_ntes_nnid', 'MUSIC_R_U'];
 

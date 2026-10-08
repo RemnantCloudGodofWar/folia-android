@@ -2,7 +2,7 @@ import CryptoJS from '../vendor/crypto-es.mjs';
 import { noteLibraryStep } from './libraryTrace.js';
 import {
   clearCookieCache,
-  getKGCookie,
+  getKGCookie as readKGCookie,
   parseCookieString,
   parseKGCookieObject,
   saveProviderCookie,
@@ -24,10 +24,14 @@ const KG_UA_MOBILE = 'Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36
 const KG_UA_PC = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 const KG_DEMO_UA = 'Mozilla/5.0 (Linux; Android 12; Pixel 5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Mobile Safari/537.36 KGMusic/9.3.0';
 const KG_ANDROID_UA = 'Android15-1070-11083-46-0-DiscoveryDRADProtocol-wifi';
-const KG_ANDROID_APPID = 1005;
-const KG_ANDROID_CLIENTVER = 20489;
 const KG_LITE_APPID = 3116;
 const KG_LITE_CLIENTVER = 11440;
+const KG_ANDROID_APPID = KG_LITE_APPID;
+const KG_ANDROID_CLIENTVER = KG_LITE_CLIENTVER;
+const KG_PLATFORM = 'lite';
+const KG_PLATFORM_MIGRATION_KEY = 'kgPlatformMigration';
+const KG_PLATFORM_MIGRATION_VERSION = 'lite-v1';
+const KG_DEVICE_STORAGE_KEY = 'kgLiteDevice';
 const KG_LOGIN_STORAGE_KEY = 'kgLoginPersist';
 
 function buildKuGooCookieValue(patch) {
@@ -58,6 +62,13 @@ async function saveKGLoginPersist(patch) {
   if (patch.pic) payload.pic = patch.pic;
   if (patch.vip_type) payload.vip_type = String(patch.vip_type);
   if (patch.vip_token) payload.vip_token = String(patch.vip_token);
+  if (patch.t1) payload.t1 = String(patch.t1);
+  if (patch.KUGOU_API_PLATFORM) payload.KUGOU_API_PLATFORM = String(patch.KUGOU_API_PLATFORM);
+  if (patch.KUGOU_API_GUID) payload.KUGOU_API_GUID = String(patch.KUGOU_API_GUID);
+  if (patch.KUGOU_API_MID) payload.KUGOU_API_MID = String(patch.KUGOU_API_MID);
+  if (patch.KUGOU_API_DEV) payload.KUGOU_API_DEV = String(patch.KUGOU_API_DEV);
+  if (patch.KUGOU_API_MAC) payload.KUGOU_API_MAC = String(patch.KUGOU_API_MAC);
+  if (patch.KUGOU_API_WEBGL) payload.KUGOU_API_WEBGL = String(patch.KUGOU_API_WEBGL);
   if (kuGoo) payload.KuGoo = kuGoo;
   try { await chrome.storage.local.set({ [KG_LOGIN_STORAGE_KEY]: payload }); } catch (_) {}
 }
@@ -75,6 +86,7 @@ async function restoreKGLoginPersistIfNeeded() {
   const token = String(stored && (stored.token || stored.t) || '').trim();
   if (!userId || !token) return false;
   const cookiePatch = {
+    ...buildKGDeviceCookiePatch(await getKGDeviceIdentity()),
     userid: userId,
     KugooID: userId,
     token,
@@ -84,6 +96,13 @@ async function restoreKGLoginPersistIfNeeded() {
   if (stored.pic) cookiePatch.pic = stored.pic;
   if (stored.vip_type) cookiePatch.vip_type = String(stored.vip_type);
   if (stored.vip_token) cookiePatch.vip_token = String(stored.vip_token);
+  if (stored.t1) cookiePatch.t1 = String(stored.t1);
+  if (stored.KUGOU_API_PLATFORM) cookiePatch.KUGOU_API_PLATFORM = String(stored.KUGOU_API_PLATFORM);
+  if (stored.KUGOU_API_GUID) cookiePatch.KUGOU_API_GUID = String(stored.KUGOU_API_GUID);
+  if (stored.KUGOU_API_MID) cookiePatch.KUGOU_API_MID = String(stored.KUGOU_API_MID);
+  if (stored.KUGOU_API_DEV) cookiePatch.KUGOU_API_DEV = String(stored.KUGOU_API_DEV);
+  if (stored.KUGOU_API_MAC) cookiePatch.KUGOU_API_MAC = String(stored.KUGOU_API_MAC);
+  if (stored.KUGOU_API_WEBGL) cookiePatch.KUGOU_API_WEBGL = String(stored.KUGOU_API_WEBGL);
   const kuGoo = stored.KuGoo || buildKuGooCookieValue(cookiePatch);
   if (kuGoo) cookiePatch.KuGoo = kuGoo;
   try {
@@ -108,7 +127,11 @@ export async function ensureKGCookie() {
 
 async function persistKGLoginCookies(patch) {
   const kuGoo = buildKuGooCookieValue(patch);
-  const cookiePatch = Object.assign({}, patch || {});
+  const cookiePatch = Object.assign(
+    {},
+    buildKGDeviceCookiePatch(await getKGDeviceIdentity()),
+    patch || {},
+  );
   if (kuGoo && !cookiePatch.KuGoo) cookiePatch.KuGoo = kuGoo;
   try {
     await setBrowserCookies('https://www.kugou.com/', cookiePatch);
@@ -119,14 +142,17 @@ async function persistKGLoginCookies(patch) {
 }
 /** Official KuGouMusicApi song_url hardcoded clientver for /v5/url */
 const KG_TRACKER_CLIENTVER = 11430;
-const KG_WEB_CLIENTVER = 9030;
+const KG_SONG_PAGE_ID = 967177915;
+const KG_SONG_PPID = '356753938,823673182,967485191';
+const KG_SONG_PID = 411;
+const KG_WEB_CLIENTVER = KG_ANDROID_CLIENTVER;
 const KG_SRCAPPID = 2919;
 const KG_QR_KEY_APPID = 1001;
-const KG_ANDROID_SIGN_SALT = 'OIlwieks28dk2k092lksi2UIkp';
+const KG_ANDROID_SIGN_SALT = 'LnT6xpN3khm36zse0QzvmgTZ3waWdRSA';
 const KG_CLOUDLIST_GATEWAY = 'https://gateway.kugou.com/cloudlist.service';
 const KG_CLOUDLIST_ROUTER = { 'x-router': 'cloudlist.service.kugou.com' };
 const KG_PRODUCT_VIP_TYPE = { tvip: 6, vip: 6, svip: 33, qvip: 6, dvip: 6, mvip: 3 };
-const KG_TRACKER_SECRET = '57ae12eb6890223e355ccfcb74edf70d1005';
+const KG_TRACKER_SECRET = '185672dd44712f60bb1736df5a377e82';
 const KG_TRACKER_HOSTS = [
   'https://trackercdn.kugou.com',
   'https://trackercdnbj.kugou.com',
@@ -143,14 +169,20 @@ const KG_VIP_TOKEN_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 let kgVipTokenRefreshAt = 0;
 // 单个登录网关的上限：一条不响应的线路不能把换取 vip_token 这件事整体拖住。
 const KG_AUTH_REFRESH_BASE_DEADLINE_MS = 8000;
-const KG_LOGIN_AES_KEY = '90b8382a1bb4ccdcf063102053fd75b8';
-const KG_LOGIN_AES_IV = 'f063102053fd75b8';
+const KG_LOGIN_AES_KEY = 'c24f74ca2820225badc01946dba4fdf7';
+const KG_LOGIN_AES_IV = 'adc01946dba4fdf7';
+const KG_LITE_T2_KEY = 'fd14b35e3f81af3817a20ae7adae7020';
+const KG_LITE_T2_IV = '17a20ae7adae7020';
+const KG_LITE_T1_KEY = '5e4ef500e9597fe004bd09a46d8add98';
+const KG_LITE_T1_IV = '04bd09a46d8add98';
 const KG_RSA_MODULUS = BigInt(
-  '0xc8006ed03842d2628209bd314984ca5ed6cfe06e30c95f9d4704d9c49791d7a935ba950ecb0bc8ebf5f5994f0bac927a7eb151b3c1de343303fa539c83136eccfd7d7e511e2dbce18eaa9f784c9b50d443e75865979e0a5e216e46c684066a8d6b998580bbaa22d73f5790286bb14742e83244e44db6d707ffe162c5c7002d45',
+  '0xc40a2d0da76511f3bb1cc2bbd3afbd8bea83b4d6b05b6c13eb8920c53f1af7679b32ba0d0edb843240ef1b836efed3ee240734c14c1399fd6594d16af22f52525d14d72e0155c6dcc8638d4f7bb94f3a0b1f4c29f991972f2a160a25eb0a9e724336be7f69bbd319ffab1c6dd8470b021dc434f3faba89f4a2a01b33bdbdd08b',
 );
 const KG_RSA_EXP = BigInt(65537);
 const KG_RSA_KEY_BYTES = 128;
 let kgMidCache = '';
+let kgDeviceCache = null;
+let kgPlatformMigrationPromise = null;
 let kgSessionCache = { key: '', at: 0, session: null };
 let kgVipSessionCache = {
   userId: '', vipType: 0, vipToken: '', vipLabel: '', expireTime: '', isVip: false,
@@ -168,6 +200,148 @@ function kgRandomString(len) {
   let out = '';
   for (let i = 0; i < (len || 16); i++) out += alphabet[Math.floor(Math.random() * alphabet.length)];
   return out;
+}
+
+function kgRandomHex(len) {
+  const alphabet = '0123456789ABCDEF';
+  let out = '';
+  for (let i = 0; i < (len || 16); i++) out += alphabet[Math.floor(Math.random() * alphabet.length)];
+  return out;
+}
+
+function buildKGLiteDeviceIdentity() {
+  const guid = (() => {
+    try {
+      if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID().replace(/-/g, '').toUpperCase();
+    } catch (_) {}
+    return `${kgRandomHex(8)}-${kgRandomHex(4)}-4${kgRandomHex(3)}-${kgRandomHex(4)}-${kgRandomHex(12)}`.replace(/-/g, '');
+  })();
+  const mid = BigInt(`0x${md5(guid)}`).toString(10);
+  const mac = Array.from({ length: 6 }, () => kgRandomHex(2)).join(':');
+  return {
+    platform: KG_PLATFORM,
+    guid,
+    mid,
+    dev: kgRandomHex(10),
+    mac,
+    webgl: BigInt(`0x${kgRandomHex(16)}`).toString(10),
+  };
+}
+
+async function loadKGDeviceIdentity() {
+  if (kgDeviceCache) return kgDeviceCache;
+  try {
+    const stored = await chrome.storage.local.get([KG_DEVICE_STORAGE_KEY]);
+    const candidate = stored && stored[KG_DEVICE_STORAGE_KEY];
+    if (candidate && candidate.guid && candidate.mid && candidate.dev && candidate.mac && candidate.webgl) {
+      kgDeviceCache = { ...candidate, platform: KG_PLATFORM };
+      return kgDeviceCache;
+    }
+  } catch (_) {}
+  kgDeviceCache = buildKGLiteDeviceIdentity();
+  try { await chrome.storage.local.set({ [KG_DEVICE_STORAGE_KEY]: kgDeviceCache }); } catch (_) {}
+  return kgDeviceCache;
+}
+
+async function getKGDeviceIdentity(cookieHeader) {
+  await ensureKGLitePlatformMigration();
+  const device = await loadKGDeviceIdentity();
+  const parsed = parseCookieString(cookieHeader || '');
+  return {
+    platform: KG_PLATFORM,
+    guid: String(parsed.KUGOU_API_GUID || device.guid),
+    mid: String(parsed.KUGOU_API_MID || device.mid),
+    dev: String(parsed.KUGOU_API_DEV || device.dev),
+    mac: String(parsed.KUGOU_API_MAC || device.mac),
+    webgl: String(parsed.KUGOU_API_WEBGL || device.webgl),
+  };
+}
+
+function buildKGDeviceCookiePatch(device) {
+  return {
+    KUGOU_API_PLATFORM: device.platform,
+    KUGOU_API_GUID: device.guid,
+    KUGOU_API_MID: device.mid,
+    KUGOU_API_DEV: device.dev,
+    KUGOU_API_MAC: device.mac,
+    KUGOU_API_WEBGL: device.webgl,
+  };
+}
+
+const KG_COOKIE_URLS = ['https://www.kugou.com/', 'https://m.kugou.com/', 'https://kugou.com/'];
+const KG_LEGACY_COOKIE_KEYS = [
+  'userid', 'token', 'KugooID', 'KuGoo', 'Kugoo', 'NickName', 'nickname', 'dfid', 'DFID',
+  'KToken', 't', 't1', 'KugooPwd', 'vip_type', 'vip_token', 'VIPType', 'VipType', 'musicvip',
+  'MusicPack', 'musicpack', 'is_vip', 'IsVIP', 'isVIP', 'su_vip', 'm_type', 'y_type', 'music_vip',
+  'VipLevel', 'vip_level', 'vip_endtime', 'vip_end_time', 'su_vip_end_time', 'm_end_time',
+];
+
+async function clearLegacyKugouPlatformSession() {
+  try {
+    await Promise.all(KG_COOKIE_URLS.flatMap(url => KG_LEGACY_COOKIE_KEYS.map(name => (
+      chrome.cookies.remove({ url, name }).catch(() => null)
+    ))));
+  } catch (_) {}
+  try {
+    await chrome.storage.local.remove([
+      KG_LOGIN_STORAGE_KEY,
+      KG_DEVICE_STORAGE_KEY,
+      'kgMid',
+      'kgVipSession',
+      'foliaBridgeKgCookie',
+    ]);
+  } catch (_) {}
+  try {
+    [
+      'online_provider:kugou:cookie',
+      'online_provider:kugou:token',
+      'online_provider:kugou:userid',
+      'online_provider:kugou:dfid',
+      'online_provider:kugou:vip_token',
+      'online_provider:kugou:vip_type',
+    ].forEach(key => localStorage.removeItem(key));
+  } catch (_) {}
+  clearCookieCache();
+  kgMidCache = '';
+  kgDeviceCache = null;
+  kgSessionCache = { key: '', at: 0, session: null };
+  kgVipSessionCache = {
+    userId: '', vipType: 0, vipToken: '', vipLabel: '', expireTime: '', isVip: false,
+    appToken: '', sourceToken: '', authAt: 0, at: 0,
+  };
+  kgAuthRefreshPromise = null;
+  kgVipTokenRefreshAt = 0;
+  kgPlayUrlCache.clear();
+}
+
+async function ensureKGLitePlatformMigration() {
+  if (kgPlatformMigrationPromise) return kgPlatformMigrationPromise;
+  kgPlatformMigrationPromise = (async () => {
+    try {
+      const stored = await chrome.storage.local.get([KG_PLATFORM_MIGRATION_KEY]);
+      if (stored && stored[KG_PLATFORM_MIGRATION_KEY] === KG_PLATFORM_MIGRATION_VERSION) return;
+    } catch (_) {
+      try {
+        if (localStorage.getItem(KG_PLATFORM_MIGRATION_KEY) === KG_PLATFORM_MIGRATION_VERSION) return;
+      } catch (_) {}
+    }
+    noteLibraryStep('kugou', 'platform:migration:start', { from: 'legacy', to: KG_PLATFORM });
+    await clearLegacyKugouPlatformSession();
+    try {
+      await chrome.storage.local.set({ [KG_PLATFORM_MIGRATION_KEY]: KG_PLATFORM_MIGRATION_VERSION });
+    } catch (_) {
+      try { localStorage.setItem(KG_PLATFORM_MIGRATION_KEY, KG_PLATFORM_MIGRATION_VERSION); } catch (_) {}
+    }
+    noteLibraryStep('kugou', 'platform:migration:done', { platform: KG_PLATFORM });
+  })().finally(() => {
+    kgPlatformMigrationPromise = null;
+  });
+  return kgPlatformMigrationPromise;
+}
+
+async function getKGCookie() {
+  await ensureKGLitePlatformMigration();
+  return readKGCookie();
 }
 
 function kgModPow(base, exp, mod) {
@@ -348,6 +522,10 @@ async function enrichKGCookieHeader(cookieHeader, opts) {
   const vipToken = fromCookieVipToken || (cached && cached.vipToken) || '';
   const vipType = fromCookieVipType || (cached && cached.vipType) || 0;
   const parts = [];
+  const devicePatch = buildKGDeviceCookiePatch(await getKGDeviceIdentity(cookieHeader));
+  Object.entries(devicePatch).forEach(([key, value]) => {
+    if (!new RegExp(`(?:^|;)\\s*${key}=`, 'i').test(cookieHeader)) parts.push(`${key}=${value}`);
+  });
   if (userId && !/(?:^|;\s*)userid=/i.test(cookieHeader)) parts.push(`userid=${userId}`);
   if (userId && !/(?:^|;\s*)KugooID=/i.test(cookieHeader)) parts.push(`KugooID=${userId}`);
   // Append last so kgCookieToken (tail-scan) prefers chosen token / vip_token.
@@ -372,17 +550,30 @@ async function refreshKGLoginByToken(cookieHeader) {
   let bodyData;
   try {
     encryptParams = kgAesEncryptParams({});
+    const device = await getKGDeviceIdentity(cookieHeader);
+    const cookie = parseCookieString(cookieHeader);
+    const t2 = kgAesEncryptHex(
+      `${device.guid}|0f607264fc6318a92b9e13c65db7cd3c|${device.mac}|${device.dev}|${dateNow}`,
+      KG_LITE_T2_KEY,
+      KG_LITE_T2_IV,
+    );
+    const t1 = kgAesEncryptHex(
+      `${cookie.t1 || ''}|${dateNow}`,
+      KG_LITE_T1_KEY,
+      KG_LITE_T1_IV,
+    );
     bodyData = {
       dfid: kgCookieDfid(cookieHeader) || '-',
       p3: kgAesEncryptHex({ clienttime, token }, KG_LOGIN_AES_KEY, KG_LOGIN_AES_IV),
       plat: 1,
-      t1: 0,
-      t2: 0,
+      t1,
+      t2,
       t3: 'MCwwLDAsMCwwLDAsMCwwLDA=',
       pk: kgRsaEncryptRaw({ clienttime_ms: dateNow, key: encryptParams.key }),
       params: encryptParams.str,
       userid: userId,
       clienttime_ms: dateNow,
+      dev: device.dev,
     };
   } catch (_) {
     return null;
@@ -445,6 +636,7 @@ async function refreshKGLoginByToken(cookieHeader) {
       // Never overwrite browser web token with android token — only persist vip fields.
       try {
         const cookiePatch = {};
+        if (data.t1) cookiePatch.t1 = String(data.t1);
         if (vipToken) cookiePatch.vip_token = vipToken;
         if (vipType) cookiePatch.vip_type = String(vipType);
         if (Object.keys(cookiePatch).length) await setBrowserCookies('https://www.kugou.com/', cookiePatch);
@@ -649,6 +841,7 @@ function signatureKGWebParams(params) {
 
 /** Lean cookie for signed android APIs — avoid huge KuGoo blob breaking gateway requests. */
 function buildKGLeanCookie(cookieHeader) {
+  const parsed = parseCookieString(cookieHeader);
   const userId = kgCookieUserId(cookieHeader);
   const token = kgCookieToken(cookieHeader);
   const dfid = kgCookieDfid(cookieHeader) || '-';
@@ -664,6 +857,11 @@ function buildKGLeanCookie(cookieHeader) {
   }
   if (dfid && dfid !== '-') parts.push(`dfid=${dfid}`);
   if (vipToken) parts.push(`vip_token=${vipToken}`);
+  if (parsed.t1) parts.push(`t1=${parsed.t1}`);
+  ['KUGOU_API_PLATFORM', 'KUGOU_API_GUID', 'KUGOU_API_MID', 'KUGOU_API_DEV', 'KUGOU_API_MAC', 'KUGOU_API_WEBGL']
+    .forEach(key => {
+      if (parsed[key]) parts.push(`${key}=${parsed[key]}`);
+    });
   return parts.join('; ');
 }
 
@@ -1393,27 +1591,8 @@ function buildKGMid() {
 }
 
 async function getKGMid(cookieHeader) {
-  const obj = parseCookieString(cookieHeader || '');
-  const expanded = parseKGCookieObject(cookieHeader || '');
-  const raw = String(
-    obj.mid || obj.kg_mid || obj.KG_MID || obj.KG_M_ID || expanded.mid || expanded.kg_mid || '',
-  ).trim();
-  if (/^[a-f0-9]{32}$/i.test(raw)) {
-    kgMidCache = raw.toLowerCase();
-    return kgMidCache;
-  }
-  const digits = raw.replace(/\D/g, '');
-  if (digits.length >= 20) return digits.slice(0, 38);
-  if (kgMidCache) return kgMidCache;
-  try {
-    const stored = await chrome.storage.local.get(['kgMid']);
-    if (stored && stored.kgMid) {
-      kgMidCache = String(stored.kgMid);
-      return kgMidCache;
-    }
-  } catch (_) {}
-  kgMidCache = buildKGMid();
-  try { await chrome.storage.local.set({ kgMid: kgMidCache }); } catch (_) {}
+  const device = await getKGDeviceIdentity(cookieHeader);
+  kgMidCache = String(device.mid);
   return kgMidCache;
 }
 
@@ -1422,13 +1601,13 @@ function buildKGTrackerKey(hash, mid, userId, appid) {
   userId = String(userId || '0').replace(/\D/g, '') || '0';
   appid = String(appid || KG_ANDROID_APPID);
   // Compatible with both historical concat and official signKey(hash+salt+appid+mid+userid).
-  return md5(`${hash}57ae12eb6890223e355ccfcb74edf70d${appid}${mid}${userId}`);
+  return md5(`${hash}${KG_TRACKER_SECRET}${appid}${mid}${userId}`);
 }
 
 function buildKGLiteTrackerKey(hash, mid, userId) {
   hash = String(hash || '').trim().toLowerCase();
   userId = String(userId || '0').replace(/\D/g, '') || '0';
-  return md5(`${hash}185672dd44712f60bb1736df5a377e82${KG_LITE_APPID}${mid}${userId}`);
+  return md5(`${hash}${KG_TRACKER_SECRET}${KG_LITE_APPID}${mid}${userId}`);
 }
 
 /**
@@ -1455,15 +1634,15 @@ async function fetchKGAndroidFastSongUrl(hash, albumId, albumAudioId, cookieHead
     hash,
     ssa_flag: 'is_fromtrack',
     version: KG_ANDROID_CLIENTVER,
-    page_id: 151369488,
+    page_id: KG_SONG_PAGE_ID,
     quality: quality || 128,
     album_audio_id: Number(albumAudioId) || 0,
     behavior: 'play',
-    pid: 2,
+    pid: KG_SONG_PID,
     cmd: 26,
     pidversion: 3001,
     IsFreePart: 0,
-    ppage_id: '463467626,350369493,788954147',
+    ppage_id: KG_SONG_PPID,
     cdnBackup: 1,
     module: '',
     clientver: KG_ANDROID_CLIENTVER,
@@ -1551,13 +1730,13 @@ async function fetchKGTrackerV5Url(hash, albumId, albumAudioId, cookieHeader, lo
       behavior: 'play',
       hash,
       cmd: 26,
-      pid: 2,
+      pid: KG_SONG_PID,
       pidversion: 3001,
       IsFreePart: 0,
       cdnBackup: 1,
       module: '',
-      page_id: 151369488,
-      ppage_id: '463467626,350369493,788954147',
+      page_id: KG_SONG_PAGE_ID,
+      ppage_id: KG_SONG_PPID,
       quality: qualityCode,
       ssa_flag: 'is_fromtrack',
       version: attempt.clientver,
@@ -2357,6 +2536,7 @@ async function fetchKGMobileVipInfo(cookieHeader) {
 
 export async function getKGLoginStatus(cookieHeader) {
   cookieHeader = cookieHeader || await ensureKGCookie();
+  noteLibraryStep('kugou', 'platform:ready', { platform: KG_PLATFORM });
   if (kgCookieUserId(cookieHeader) && kgCookieToken(cookieHeader)) {
     try {
       await syncKGVipCacheWithCookie(cookieHeader);

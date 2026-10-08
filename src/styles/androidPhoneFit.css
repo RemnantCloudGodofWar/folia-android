@@ -342,17 +342,6 @@ html[data-folia-phone-fit='true'][data-folia-phone-orientation='portrait'] [data
   height: 32px !important;
 }
 
-/* Touch phones do not use the hover prev/next arrows; their 20px zones are what made the title
-   vanish in the narrow middle column. Text can use the whole middle cell instead. */
-html[data-folia-phone-fit='true'][data-folia-phone-orientation='portrait'] [data-folia-track-title-zone] {
-  display: none !important;
-}
-
-html[data-folia-phone-fit='true'][data-folia-phone-orientation='portrait'] [data-folia-track-title-text='true'] {
-  left: 0 !important;
-  right: 0 !important;
-}
-
 html[data-folia-phone-fit='true'][data-folia-phone-orientation='portrait'] [data-folia-track-title-text='true'] span {
   font-size: 12px !important;
 }

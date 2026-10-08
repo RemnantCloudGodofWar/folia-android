@@ -219,6 +219,8 @@
 下面这些边的依赖方向本身就是错的：
 
 - `src/stores/useVisualizerSettingsStore.ts` → `src/components/visualizer/registry.tsx`  —— store 不应依赖组件
+- `src/utils/buildDiagnosticReport.ts` → `src/stores/useAudioSettingsStore.ts`  —— 纯变换不应依赖 UI 或状态
+- `src/utils/buildDiagnosticReport.ts` → `src/stores/usePlaybackStore.ts`  —— 纯变换不应依赖 UI 或状态
 
 ### 目录归属存疑
 

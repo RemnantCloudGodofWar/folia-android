@@ -39,6 +39,7 @@ public class FoliaPlaybackService extends Service {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private volatile String currentArtworkUrl = "";
     private volatile String appliedArtworkUrl = "";
+    private volatile Bitmap appliedArtworkBitmap = null;
     private volatile String lastRequestedCoverUrl = "";
 
     @Override
@@ -71,6 +72,12 @@ public class FoliaPlaybackService extends Service {
         long position = intent.getLongExtra("position", 0);
         long duration = intent.getLongExtra("duration", 0);
         currentArtworkUrl = coverUrl == null ? "" : coverUrl.trim();
+        Bitmap retainedArtwork = appliedArtworkBitmap;
+        if (currentArtworkUrl.isEmpty()) {
+            appliedArtworkUrl = "";
+            appliedArtworkBitmap = null;
+            retainedArtwork = null;
+        }
         if (!currentArtworkUrl.equals(lastRequestedCoverUrl)) {
             lastRequestedCoverUrl = currentArtworkUrl;
             FoliaNativePlugin.notePlaybackArtwork(
@@ -80,7 +87,8 @@ public class FoliaPlaybackService extends Service {
             );
         }
 
-        mediaSession.setMetadata(buildMetadata(title, artist, album, duration, null, currentArtworkUrl));
+        mediaSession.setMetadata(buildMetadata(title, artist, album, duration, retainedArtwork, currentArtworkUrl));
+        FoliaNativePlugin.notePlaybackArtworkApplied(retainedArtwork != null);
         mediaSession.setPlaybackState(new PlaybackState.Builder()
             .setActions(
                 PlaybackState.ACTION_PLAY
@@ -93,11 +101,12 @@ public class FoliaPlaybackService extends Service {
             .setState(playing ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED, position, playing ? 1f : 0f)
             .build());
 
-        Notification notification = buildNotification(title, artist, playing, null);
+        Notification notification = buildNotification(title, artist, playing, retainedArtwork);
         startForeground(NOTIFICATION_ID, notification);
         loadArtwork(currentArtworkUrl, bitmap -> {
             if (!currentArtworkUrl.equals(coverUrl == null ? "" : coverUrl.trim())) return;
             mediaSession.setMetadata(buildMetadata(title, artist, album, duration, bitmap, currentArtworkUrl));
+            FoliaNativePlugin.notePlaybackArtworkApplied(bitmap != null);
             NotificationManager manager = getSystemService(NotificationManager.class);
             if (manager != null) {
                 manager.notify(NOTIFICATION_ID, buildNotification(title, artist, playing, bitmap));
@@ -119,7 +128,7 @@ public class FoliaPlaybackService extends Service {
             .putString(MediaMetadata.METADATA_KEY_ARTIST, artist == null ? "" : artist)
             .putString(MediaMetadata.METADATA_KEY_ALBUM, album == null ? "" : album)
             .putLong(MediaMetadata.METADATA_KEY_DURATION, duration);
-        if (coverUrl != null && !coverUrl.isEmpty()) {
+        if (artwork == null && coverUrl != null && !coverUrl.isEmpty()) {
             metadata.putString(MediaMetadata.METADATA_KEY_ART_URI, coverUrl);
             metadata.putString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI, coverUrl);
         }
@@ -188,6 +197,7 @@ public class FoliaPlaybackService extends Service {
             mainHandler.post(() -> {
                 if (value.equals(currentArtworkUrl)) {
                     appliedArtworkUrl = value;
+                    appliedArtworkBitmap = cached;
                     FoliaNativePlugin.notePlaybackArtwork(
                         value,
                         "loaded",
@@ -227,6 +237,7 @@ public class FoliaPlaybackService extends Service {
                 mainHandler.post(() -> {
                     if (value.equals(currentArtworkUrl)) {
                         appliedArtworkUrl = value;
+                        appliedArtworkBitmap = resolved;
                         FoliaNativePlugin.notePlaybackArtwork(
                             value,
                             "loaded",

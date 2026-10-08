@@ -71,6 +71,7 @@ public class FoliaNativePlugin extends Plugin {
     private static volatile String playbackArtworkStatus = "none";
     private static volatile String playbackArtworkDetail = "";
     private static volatile long playbackArtworkAt = 0;
+    private static volatile boolean playbackArtworkApplied = false;
     private final OkHttpClient client = new OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(45, TimeUnit.SECONDS)
@@ -103,6 +104,10 @@ public class FoliaNativePlugin extends Plugin {
         playbackArtworkStatus = status == null || status.isEmpty() ? "unknown" : status;
         playbackArtworkDetail = detail == null ? "" : detail;
         playbackArtworkAt = System.currentTimeMillis();
+    }
+
+    static void notePlaybackArtworkApplied(boolean applied) {
+        playbackArtworkApplied = applied;
     }
 
     private static String describePlaybackArtworkUrl(String value) {
@@ -410,6 +415,7 @@ public class FoliaNativePlugin extends Plugin {
         result.put("status", playbackArtworkStatus);
         result.put("detail", playbackArtworkDetail);
         result.put("at", playbackArtworkAt);
+        result.put("applied", playbackArtworkApplied);
         call.resolve(result);
     }
 

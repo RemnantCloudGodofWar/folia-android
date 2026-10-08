@@ -1,4 +1,5 @@
 import CryptoJS from '../vendor/crypto-es.mjs';
+import { noteLibraryStep } from './libraryTrace.js';
 
 // Browser/Android adaptation of bodian-music-api@0.1.2. The desktop package uses node:https,
 // node:crypto and node:zlib; this implementation uses WebView fetch, crypto-es and browser
@@ -99,8 +100,27 @@ const desktopHeaders = deviceId => ({
   devid: deviceId,
   qimei36: deviceId,
   'Content-Type': 'application/json',
-  'Accept-Encoding': 'gzip',
 });
+
+const readResponsePayload = async (response) => {
+  const fallback = response.clone();
+  try {
+    return await response.json();
+  } catch {
+    const contentEncoding = String(response.headers.get('content-encoding') || '').toLowerCase();
+    if (contentEncoding.includes('gzip') && typeof DecompressionStream !== 'undefined' && fallback.body) {
+      try {
+        const stream = fallback.body.pipeThrough(new DecompressionStream('gzip'));
+        return await new Response(stream).json();
+      } catch (_) {}
+    }
+    const contentType = response.headers.get('content-type') || 'unknown';
+    throw new BodianError(
+      'invalid-response',
+      `Bodian returned an unreadable response (HTTP ${response.status}, content-type ${contentType})`,
+    );
+  }
+};
 
 const createClient = (deviceId) => ({
   async call(path, options = {}) {
@@ -138,7 +158,9 @@ const createClient = (deviceId) => ({
       redirect: 'follow',
     });
     let payload = null;
-    try { payload = await response.json(); } catch (_) {}
+    try { payload = await readResponsePayload(response); } catch (error) {
+      if (error instanceof BodianError) throw error;
+    }
     if (response.status === 401) {
       throw new BodianError('auth-required', 'Bodian sign-in is required', 401);
     }
@@ -599,6 +621,7 @@ const operations = {
 
 export async function handleBodianRequest(operation, params = {}) {
   const revision = sessionState.revision;
+  noteLibraryStep('bodian', 'bridge:request', { operation });
   try {
     if (!BODIAN_OPERATIONS.has(operation)) {
       throw new BodianError('unsupported', 'Unsupported Bodian operation');
@@ -606,17 +629,26 @@ export async function handleBodianRequest(operation, params = {}) {
     if (!params || typeof params !== 'object' || Array.isArray(params)) {
       throw new BodianError('invalid-response', 'Invalid Bodian request parameters');
     }
-    return { ok: true, data: await operations[operation](params) };
+    const result = { ok: true, data: await operations[operation](params) };
+    noteLibraryStep('bodian', 'bridge:result', { operation, ok: true });
+    return result;
   } catch (error) {
     if (error instanceof BodianError && error.code === 'auth-required' && sessionState.revision === revision) {
       clearSession();
     }
-    return {
+    const result = {
       ok: false,
       error: {
         code: error instanceof BodianError ? error.code : 'invalid-response',
         message: error instanceof BodianError ? error.message : 'Bodian operation failed',
       },
     };
+    noteLibraryStep('bodian', 'bridge:result', {
+      operation,
+      ok: false,
+      code: result.error.code,
+      message: result.error.message,
+    });
+    return result;
   }
 }

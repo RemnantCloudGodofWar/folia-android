@@ -48,23 +48,65 @@ function encodeCookiePair(key, value) {
   return `${encodeURIComponent(key)}=${encodeURIComponent(safeDecodeCookieValue(value))}`;
 }
 
-/** eapi 的 deviceId 必须跨请求稳定：每次都换一个，风控会把请求判成「环境异常」（8821）。 */
-const EAPI_DEVICE_ID_KEY = 'neteaseDeviceId';
+/**
+ * eapi 需要一组「跨请求稳定」的客户端标识：deviceId、NMTID、_ntes_nuid、WNMCID。
+ *
+ * deviceId 每次随机换会被风控判成「设备环境异常」（8821）；NMTID 更是官方客户端 cookie 的
+ * 一部分（上游注释：服务端会给不带 NMTID 的 eapi 请求下发一个，之后要求带上）。这些值都存本机，
+ * 只在缺失时生成一次。
+ */
+const EAPI_STATE_KEYS = {
+  deviceId: 'neteaseDeviceId',
+  nmtid: 'neteaseNmtid',
+  nuid: 'neteaseNuid',
+  wnmcid: 'neteaseWnmcid',
+};
 
-async function getEapiDeviceId(parsed) {
-  const fromCookie = String(parsed.deviceId || '').trim();
-  if (fromCookie) return fromCookie;
-  try {
-    const stored = await chrome.storage.local.get([EAPI_DEVICE_ID_KEY]);
-    const existing = String(stored?.[EAPI_DEVICE_ID_KEY] || '').trim();
-    if (existing) return existing;
-  } catch (_) {}
-  let created = '';
-  for (let index = 0; index < 16; index += 1) {
-    created += 'abcdefghijklmnopqrstuvwxyz0123456789'.charAt(Math.floor(Math.random() * 36));
+const randomChars = (length, alphabet) => {
+  let out = '';
+  for (let index = 0; index < length; index += 1) {
+    out += alphabet.charAt(Math.floor(Math.random() * alphabet.length));
   }
-  try { await chrome.storage.local.set({ [EAPI_DEVICE_ID_KEY]: created }); } catch (_) {}
-  return created;
+  return out;
+};
+
+async function readEapiState() {
+  const keys = Object.values(EAPI_STATE_KEYS);
+  let stored = {};
+  try {
+    stored = (await chrome.storage.local.get(keys)) || {};
+  } catch (_) {
+    stored = {};
+  }
+  const next = {};
+  const deviceId = String(stored[EAPI_STATE_KEYS.deviceId] || '').trim();
+  next.deviceId = deviceId || randomChars(16, 'abcdefghijklmnopqrstuvwxyz0123456789');
+  const nuid = String(stored[EAPI_STATE_KEYS.nuid] || '').trim();
+  next.nuid = nuid || randomChars(32, '0123456789abcdef');
+  next.nmtid = String(stored[EAPI_STATE_KEYS.nmtid] || '').trim();
+  const wnmcid = String(stored[EAPI_STATE_KEYS.wnmcid] || '').trim();
+  next.wnmcid = wnmcid || `${randomChars(6, 'abcdefghijklmnopqrstuvwxyz')}.${Date.now()}.01.0`;
+  const patch = {};
+  if (!deviceId) patch[EAPI_STATE_KEYS.deviceId] = next.deviceId;
+  if (!nuid) patch[EAPI_STATE_KEYS.nuid] = next.nuid;
+  if (!wnmcid) patch[EAPI_STATE_KEYS.wnmcid] = next.wnmcid;
+  if (Object.keys(patch).length > 0) {
+    try { await chrome.storage.local.set(patch); } catch (_) {}
+  }
+  return next;
+}
+
+/** 服务端在第一个不带 NMTID 的 eapi 响应里下发 NMTID，后续请求要带上它。 */
+async function rememberEapiNmtid(setCookies) {
+  if (!Array.isArray(setCookies) || setCookies.length === 0) return;
+  for (const entry of setCookies) {
+    const match = String(entry || '').match(/(?:^|;\s*)NMTID=([^;]+)/);
+    if (!match) continue;
+    const value = String(match[1] || '').trim();
+    if (!value) continue;
+    try { await chrome.storage.local.set({ [EAPI_STATE_KEYS.nmtid]: value }); } catch (_) {}
+    return;
+  }
 }
 
 /**
@@ -72,22 +114,37 @@ async function getEapiDeviceId(parsed) {
  * 之前只把设备信息塞进 Cookie、body 里没有 header，服务端会按「非官方客户端」判风控，
  * 登录接口直接回 8821「环境异常」。这里按官方客户端的字段补上。
  */
-async function buildEapiBodyHeader(parsed) {
+async function buildEapiHeader(parsed) {
+  const state = await readEapiState();
   const header = {
     osver: parsed.osver || '16.2',
-    deviceId: await getEapiDeviceId(parsed),
+    deviceId: parsed.deviceId || state.deviceId,
     appver: parsed.appver || '9.0.90',
     versioncode: parsed.versioncode || '140',
     mobilename: parsed.mobilename || '',
     buildver: parsed.buildver || String(Date.now()).slice(0, 10),
     resolution: parsed.resolution || '1920x1080',
     __csrf: parsed.__csrf || '',
-    os: parsed.os || 'ios',
+    // 官方 iPhone 客户端的 os 就是 'iPhone OS'，写成 'ios' 与 UA 对不上。
+    os: parsed.os || 'iPhone OS',
     channel: parsed.channel || 'distribution',
     requestId: `${Date.now()}_${String(Math.floor(Math.random() * 1000)).padStart(4, '0')}`,
   };
+  // 官方客户端 cookie 里的这几个值缺一个都像「非官方客户端」，缺失时随机生成并固定下来。
+  header._ntes_nuid = parsed._ntes_nuid || state.nuid;
+  header._ntes_nnid = parsed._ntes_nnid || `${header._ntes_nuid},${Date.now()}`;
+  header.WNMCID = parsed.WNMCID || state.wnmcid;
+  header.WEVNSM = parsed.WEVNSM || '1.0.0';
+  header.__remember_me = 'true';
+  header.ntes_kaola_ad = '1';
+  const nmtid = parsed.NMTID || state.nmtid;
+  if (nmtid) header.NMTID = nmtid;
   if (parsed.MUSIC_U) header.MUSIC_U = parsed.MUSIC_U;
   if (parsed.MUSIC_A) header.MUSIC_A = parsed.MUSIC_A;
+  // 其余会话 cookie（MUSIC_R_U、sDeviceId…）原样带上，官方客户端也会回传。
+  EAPI_COOKIE_KEYS.forEach((key) => {
+    if (parsed[key] && header[key] === undefined) header[key] = parsed[key];
+  });
   return header;
 }
 
@@ -100,17 +157,7 @@ async function resolveEapiCookieMap(cookieHeader) {
   return parsed;
 }
 
-async function formatEapiCookieHeader(parsed) {
-  const header = {
-    osver: parsed.osver || '16.2',
-    os: parsed.os || 'ios',
-    appver: parsed.appver || '9.0.90',
-    versioncode: parsed.versioncode || '140',
-    channel: parsed.channel || 'distribution',
-  };
-  EAPI_COOKIE_KEYS.forEach((key) => {
-    if (parsed[key]) header[key] = parsed[key];
-  });
+function formatEapiCookieHeader(header) {
   return Object.entries(header)
     .filter(([, value]) => value != null && String(value) !== '')
     .map(([key, value]) => encodeCookiePair(key, value))
@@ -118,23 +165,22 @@ async function formatEapiCookieHeader(parsed) {
 }
 
 export async function buildEapiCookieHeader(cookieHeader) {
-  return formatEapiCookieHeader(await resolveEapiCookieMap(cookieHeader));
+  return formatEapiCookieHeader(await buildEapiHeader(await resolveEapiCookieMap(cookieHeader)));
 }
 
 export async function eapiRequest(path, data, cookieHeader) {
   const uri = path.startsWith('/api/') ? path : `/api/${path.replace(/^\//, '')}`;
   const apiPath = uri.slice(5);
   const parsedCookies = await resolveEapiCookieMap(cookieHeader);
-  const requestBody = Object.assign({}, data || {}, {
-    header: await buildEapiBodyHeader(parsedCookies),
-  });
+  const header = await buildEapiHeader(parsedCookies);
+  const requestBody = Object.assign({}, data || {}, { header });
   const encrypted = eapiEncrypt(uri, requestBody);
   const resp = await fetch(`${EAPI_BASE}/eapi/${apiPath}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
       'User-Agent': EAPI_UA,
-      Cookie: await formatEapiCookieHeader(parsedCookies),
+      Cookie: formatEapiCookieHeader(header),
     },
     body: new URLSearchParams(encrypted).toString(),
     credentials: 'include',
@@ -151,5 +197,7 @@ export async function eapiRequest(path, data, cookieHeader) {
       setCookies = resp.headers.getSetCookie() || [];
     }
   } catch (_) {}
+  // 服务端在第一个不带 NMTID 的 eapi 响应里下发它，后续请求必须带上。
+  await rememberEapiNmtid(setCookies);
   return { status: resp.status, body, setCookies };
 }

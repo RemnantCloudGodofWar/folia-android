@@ -22,7 +22,7 @@ const EqualizerBandGrid: React.FC<EqualizerBandGridProps> = ({ gains, styles, on
     const { t } = useTranslation();
 
     return (
-        <div className={`overflow-x-auto rounded-2xl border p-4 ${styles.surfaceClass}`}>
+        <div data-folia-equalizer-bands="true" className={`overflow-x-auto rounded-2xl border p-4 ${styles.surfaceClass}`}>
             <div className="mb-3 flex min-w-[520px] items-center justify-between text-[10px] font-semibold uppercase tracking-[0.18em]">
                 <span className={`flex items-center gap-1.5 ${styles.inactiveText}`}><AudioLines size={13} />{t('ui.equalizerGain')}</span>
                 <span className={styles.inactiveText}>+12 dB · 0 · −12 dB</span>

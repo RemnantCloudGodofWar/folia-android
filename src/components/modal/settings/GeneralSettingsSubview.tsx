@@ -11,6 +11,7 @@ import PlaybackEntryViewSection from './PlaybackEntryViewSection';
 import LibrarySuiteSection from './LibrarySuiteSection';
 import PlayerBottomBarSection from './PlayerBottomBarSection';
 import AdaptiveLayoutSetting from './AdaptiveLayoutSetting';
+import AndroidPhoneFitSetting from './AndroidPhoneFitSetting';
 import CommandPaletteButtonSetting from './CommandPaletteButtonSetting';
 import HomeCardPositionSection from './HomeCardPositionSection';
 import { SettingsAnchor } from './navigation/SettingsAnchorContext';
@@ -219,6 +220,12 @@ const GeneralSettingsSubview: React.FC<GeneralSettingsSubviewProps> = ({
             />
 
             <AdaptiveLayoutSetting
+                isDaylight={isDaylight}
+                settingsCardClass={settingsCardClass}
+                theme={theme}
+            />
+
+            <AndroidPhoneFitSetting
                 isDaylight={isDaylight}
                 settingsCardClass={settingsCardClass}
                 theme={theme}

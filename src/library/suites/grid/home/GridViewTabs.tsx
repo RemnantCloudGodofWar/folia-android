@@ -44,7 +44,7 @@ export const GridViewTabs: React.FC<GridViewTabsProps> = ({ tabs, isDaylight, on
     const chrome = gridChromeClassesFor(isDaylight);
 
     return (
-        <div className={`pointer-events-auto flex h-7 items-center rounded-full p-0.5 backdrop-blur-md ${chrome.pill}`}>
+        <div data-folia-grid-tabs="true" className={`pointer-events-auto flex h-7 items-center rounded-full p-0.5 backdrop-blur-md ${chrome.pill}`}>
             {onOpenMap && (
                 <button
                     type="button"
@@ -60,7 +60,7 @@ export const GridViewTabs: React.FC<GridViewTabsProps> = ({ tabs, isDaylight, on
             )}
             {onOpenMap && tabs.length > 0 && <span aria-hidden="true" className={`mx-1 h-3.5 w-px ${chrome.divider}`} />}
             {tabs.length > 0 && (
-                <div role="tablist" data-ponder={ponderId} className="flex items-center">
+                <div role="tablist" data-folia-grid-tab-list="true" data-ponder={ponderId} className="flex items-center">
                     {tabs.map(tab => {
                         const label = typeof tab.label === 'string' ? tab.label : undefined;
                         const showLabel = tab.active || !tab.icon;

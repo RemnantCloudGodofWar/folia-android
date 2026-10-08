@@ -438,6 +438,29 @@ public class FoliaNativePlugin extends Plugin {
     }
 
     @PluginMethod
+    public void getPhoneFitLayout(PluginCall call) {
+        JSObject result = new JSObject();
+        result.put("enabled", PhoneLayoutOrientation.isEnabled(getContext()));
+        result.put("orientation", PhoneLayoutOrientation.getOrientation(getContext()));
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void setPhoneFitLayout(PluginCall call) {
+        boolean enabled = Boolean.TRUE.equals(call.getBoolean("enabled", false));
+        String orientation = call.getString("orientation", PhoneLayoutOrientation.getOrientation(getContext()));
+        PhoneLayoutOrientation.update(getContext(), enabled, orientation);
+        Activity activity = getActivity();
+        if (activity != null) {
+            activity.runOnUiThread(() -> PhoneLayoutOrientation.apply(activity));
+        }
+        JSObject result = new JSObject();
+        result.put("enabled", enabled);
+        result.put("orientation", PhoneLayoutOrientation.getOrientation(getContext()));
+        call.resolve(result);
+    }
+
+    @PluginMethod
     public void setAdaptiveLayout(PluginCall call) {
         boolean enabled = Boolean.TRUE.equals(call.getBoolean("enabled", false));
         try {

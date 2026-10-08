@@ -27,6 +27,7 @@ public class MainActivity extends BridgeActivity {
                 finish();
             }
         });
+        PhoneLayoutOrientation.apply(this);
         restoreAdaptiveLayout(webView);
         // 启动时窗口焦点和系统栏状态还会变一次，只应用一遍会被后面的 inset 恢复覆盖。
         webView.postDelayed(() -> restoreAdaptiveLayout(webView), 500);

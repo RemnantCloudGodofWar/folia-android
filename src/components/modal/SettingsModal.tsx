@@ -65,6 +65,7 @@ import { selectThemeSettingsSnapshot, useThemeSettingsStore } from '../../stores
 import { selectDesktopSettingsSnapshot, useDesktopSettingsStore } from '../../stores/useDesktopSettingsStore';
 import { selectStageSettingsSnapshot, useStageSettingsStore } from '../../stores/useStageSettingsStore';
 import { useSettingsModalStore } from '../../stores/useSettingsModalStore';
+import { useAndroidLayoutSettingsStore } from '../../stores/useAndroidLayoutSettingsStore';
 import { selectAudioSettingsSnapshot, useAudioSettingsStore } from '../../stores/useAudioSettingsStore';
 import { selectHomeLayoutSettingsSnapshot, useHomeLayoutSettingsStore } from '../../stores/useHomeLayoutSettingsStore';
 import { setNavidromeEnabledState, useLibraryStore } from '../../stores/useLibraryStore';
@@ -421,7 +422,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     };
     const contentScrollRef = useRef<HTMLDivElement>(null);
     // Matches the md:flex-row split below; the two sidebars are different enough to render separately.
-    const isWideSettingsLayout = useMediaQuery('(min-width: 768px)');
+    const phoneFitEnabled = useAndroidLayoutSettingsStore(state => state.phoneFitEnabled);
+    const isWideSettingsLayout = useMediaQuery('(min-width: 768px)') && !phoneFitEnabled;
     const settingsAnchorStore = useSettingsAnchorStore();
     const settingsAnchors = useSettingsAnchorList(settingsAnchorStore);
 
@@ -1153,6 +1155,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
                     transition={shellTransition}
+                    data-folia-settings-overlay="true"
                     className="fixed inset-0 p-3 sm:p-5"
                     style={{ backgroundColor: overlayBackground, zIndex }}
                     onMouseDown={handleOverlayMouseDown}
@@ -1161,6 +1164,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     <motion.div
                         {...panelMotion}
                         transition={shellTransition}
+                        data-folia-settings-panel="true"
                         className={`mx-auto flex h-full max-w-3xl flex-col overflow-hidden rounded-[32px] border ${borderColor} ${subviewPanelBg} shadow-[0_24px_80px_rgba(0,0,0,0.28)] relative`}
                         onClick={(event) => event.stopPropagation()}
                     >
@@ -1294,6 +1298,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             exit={{ opacity: 0 }}
             transition={shellTransition}
             data-folia-keyboard-window="true"
+            data-folia-settings-overlay="true"
             data-ponder-page-scope={activeTab === 'help' ? 'help-page' : 'settings-page'}
             className="fixed inset-0 z-[100] flex items-center justify-center px-4 py-8 sm:px-5 sm:py-12"
             style={{ backgroundColor: overlayBackground }}
@@ -1305,6 +1310,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                 transition={shellTransition}
                 className={`${glassBg} border ${borderColor} p-6 md:p-8 rounded-3xl ${activeTab === 'options' ? 'w-full md:max-w-4xl md:w-[900px] h-[90vh] md:h-[85vh]' : 'w-full md:max-w-lg'} relative shadow-2xl overflow-hidden flex flex-col max-h-[90vh] transition-all duration-300`}
                 onClick={(event) => event.stopPropagation()}
+                data-folia-settings-panel="true"
             >
                 {/* Decorative background blobs */}
                 <div className="absolute inset-0 pointer-events-none z-0">
@@ -1328,7 +1334,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
                 {/* Header / Tabs */}
                 <div className="relative shrink-0 z-10 mb-6 select-none">
-                    <div className="flex items-center gap-6">
+                    <div data-folia-settings-tabs="true" className="flex items-center gap-6">
                         <button
                             onClick={() => handleTabChange('help')}
                             className={`relative text-2xl font-bold transition-colors pb-2 ${activeTab === 'help' ? 'opacity-100' : 'opacity-40 hover:opacity-80'}`}
@@ -1623,7 +1629,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                 animate="center"
                                 exit="exit"
                                 transition={shellTransition}
-                                className="flex flex-col md:flex-row gap-4 md:gap-6 h-full"
+                                className={`flex flex-col gap-4 h-full ${isWideSettingsLayout ? 'md:flex-row md:gap-6' : ''}`}
                             >
                                 <SettingsAnchorProvider store={settingsAnchorStore}>
                                 {isWideSettingsLayout ? (
@@ -1650,7 +1656,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                         isDaylight={isDaylight}
                                     />
                                 )}
-                                <div ref={contentScrollRef} className="flex-1 overflow-y-auto custom-scrollbar pl-1 md:pl-2 pr-2 md:pr-4 relative pb-4">
+                                <div data-folia-settings-content="true" ref={contentScrollRef} className="flex-1 overflow-y-auto custom-scrollbar pl-1 md:pl-2 pr-2 md:pr-4 relative pb-4">
                                     <SettingsSectionHeader
                                         title={activeSettingsNavItem?.label ?? ''}
                                         description={activeSettingsNavItem?.description ?? ''}

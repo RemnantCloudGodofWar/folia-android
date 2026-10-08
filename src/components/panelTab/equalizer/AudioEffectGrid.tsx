@@ -25,7 +25,7 @@ const AudioEffectGrid: React.FC<AudioEffectGridProps> = ({ effects, styles, onEf
     const { t } = useTranslation();
 
     return (
-        <div className={`mt-4 rounded-2xl border p-4 ${styles.surfaceClass}`}>
+        <div data-folia-audio-effects="true" className={`mt-4 rounded-2xl border p-4 ${styles.surfaceClass}`}>
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-[10px] font-semibold uppercase tracking-[0.18em]">
                 <span className={`flex items-center gap-1.5 ${styles.inactiveText}`}><Waves size={13} />{t('ui.equalizerEffects')}</span>
                 <span className={`normal-case tracking-normal ${styles.inactiveText}`}>{t('ui.equalizerEffectsHint')}</span>

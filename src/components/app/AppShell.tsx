@@ -90,6 +90,7 @@ const AppShell: React.FC<AppShellProps> = ({
 
     return (
         <div
+            data-folia-app-shell="true"
             className="fixed inset-0 w-full h-full flex flex-col overflow-hidden font-sans transition-colors duration-500"
             style={{
                 ...appStyle,

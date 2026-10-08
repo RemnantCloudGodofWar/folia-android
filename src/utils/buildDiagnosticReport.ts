@@ -164,6 +164,8 @@ export const buildDiagnosticReport = async (): Promise<string> => {
         // 底部控制条被误改到画面中间时，这两个值就是原因，所以一并导出。
         'ui settings:',
         `  bottom bar offset: ${readLocalStorageValue('player_bottom_bar_offset')} (base 32, max scales with viewport height)`,
+        `  phone fit: ${readLocalStorageValue('folia_android_phone_fit')}`,
+        `  phone fit orientation: ${readLocalStorageValue('folia_android_phone_fit_orientation')}`,
         `  command palette auto hide: ${readLocalStorageValue('auto_hide_command_palette_button')}`,
         `  hide player progress bar: ${readLocalStorageValue('hide_player_progress_bar')}`,
         '',

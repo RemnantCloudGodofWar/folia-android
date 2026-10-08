@@ -5,6 +5,7 @@ import { installCrashDiagnostics } from './utils/crashDiagnostics';
 import { installDebugModule } from './services/debug/debugModule';
 import { installMemorySampleFeed } from './services/debug/memorySamples';
 import { installNativeAndroidBridge } from './services/nativeAndroidBridge';
+import { installAndroidPhoneFitPreference } from './services/androidPhoneLayout';
 // import { installCoverSizeAudit } from './services/debug/coverSizeSamples';
 // @ts-ignore
 globalThis.Buffer = Buffer;
@@ -24,6 +25,7 @@ installMemorySampleFeed();
 // observer or the rows it retains.
 // if (import.meta.env.DEV) installCoverSizeAudit();
 installGlobalVisualizerFrameRateLimiter();
+installAndroidPhoneFitPreference();
 void installNativeAndroidBridge();
 
 void import('./bootstrap');

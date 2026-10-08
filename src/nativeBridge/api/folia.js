@@ -34,7 +34,9 @@ import {
   qqSongDetailsBatch,
 } from './qq.js';
 import {
+  claimKGYouthDayVip,
   ensureKGCookie,
+  getKGYouthUnionVip,
   getKGLoginStatus,
   getKGUserVipDetail,
   handleKGArtistDetail,
@@ -49,6 +51,7 @@ import {
   searchKGLyricCandidates,
   downloadKGLyricByCandidate,
   kgPostAndroidSigned,
+  upgradeKGYouthDayVip,
 } from './kugou.js';
 
 function firstValue(...values) {
@@ -1129,8 +1132,10 @@ async function handleFoliaKugouRequest(input, url) {
   if (operation === 'user_cloud') {
     return { status: 1, error_code: 0, data: { info: [], songs: [], total: 0 } };
   }
-  if (operation === 'youth_union_vip' || operation === 'youth_day_vip' || operation === 'youth_day_vip_upgrade') {
-    return { status: 1, error_code: 0, data: {} };
+  if (operation === 'youth_union_vip') return await getKGYouthUnionVip(cookie);
+  if (operation === 'youth_day_vip') return await claimKGYouthDayVip(cookie, params.receive_day);
+  if (operation === 'youth_day_vip_upgrade') {
+    return await upgradeKGYouthDayVip(cookie, firstValue(params.userid, params.kugouid));
   }
 
   return {

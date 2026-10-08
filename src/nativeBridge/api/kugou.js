@@ -26,6 +26,8 @@ const KG_DEMO_UA = 'Mozilla/5.0 (Linux; Android 12; Pixel 5) AppleWebKit/537.36 
 const KG_ANDROID_UA = 'Android15-1070-11083-46-0-DiscoveryDRADProtocol-wifi';
 const KG_ANDROID_APPID = 1005;
 const KG_ANDROID_CLIENTVER = 20489;
+const KG_LITE_APPID = 3116;
+const KG_LITE_CLIENTVER = 11440;
 const KG_LOGIN_STORAGE_KEY = 'kgLoginPersist';
 
 function buildKuGooCookieValue(patch) {
@@ -721,7 +723,7 @@ async function kgPostAndroidSigned(baseURL, urlPath, cookieHeader, bodyData, ext
   const dfid = kgCookieDfid(cookieHeader) || '-';
   const clienttime = Math.floor(Date.now() / 1000);
   const leanCookie = buildKGLeanCookie(cookieHeader);
-  const bodyJson = JSON.stringify(bodyData || {});
+  const bodyJson = bodyData === undefined ? '' : JSON.stringify(bodyData || {});
   const params = Object.assign({
     dfid,
     mid,
@@ -755,6 +757,95 @@ async function kgPostAndroidSigned(baseURL, urlPath, cookieHeader, bodyData, ext
     }, buildKGAuthHeaders(token), extraHeaders),
     body: bodyJson,
   });
+}
+
+/**
+ * KuGouMusicApi `/youth/union/vip`.
+ *
+ * This is the concept-client VIP probe used by the upstream PC build before it attempts the
+ * daily listen-song reward. The response itself may report either an existing VIP or no VIP.
+ */
+export async function getKGYouthUnionVip(cookieHeader) {
+  cookieHeader = cookieHeader || await getKGCookie();
+  noteLibraryStep('kugou', 'youth:union:start');
+  const body = await kgFetchAndroidSigned(
+    'https://kugouvip.kugou.com',
+    '/v1/get_union_vip',
+    cookieHeader,
+    {
+      appid: KG_LITE_APPID,
+      clientver: KG_LITE_CLIENTVER,
+      busi_type: 'concept',
+      opt_product_types: 'dvip,qvip',
+      product_type: 'svip',
+    },
+    {},
+  );
+  noteLibraryStep('kugou', 'youth:union:done', {
+    status: body && body.status,
+    errorCode: body && body.error_code,
+  });
+  return body || { status: 0, error_code: 401, data: {} };
+}
+
+/**
+ * KuGouMusicApi `/youth/day/vip`.
+ *
+ * Claims the one-day listen-song VIP reward. `receive_day` is the China-calendar date used by
+ * the official client; the server rejects a second claim for the same day.
+ */
+export async function claimKGYouthDayVip(cookieHeader, receiveDay) {
+  cookieHeader = cookieHeader || await getKGCookie();
+  noteLibraryStep('kugou', 'youth:day:start', { receiveDay: String(receiveDay || '') });
+  const body = await kgPostAndroidSigned(
+    'https://gateway.kugou.com',
+    '/youth/v1/recharge/receive_vip_listen_song',
+    cookieHeader,
+    undefined,
+    {
+      appid: KG_LITE_APPID,
+      clientver: KG_LITE_CLIENTVER,
+      source_id: 90139,
+      receive_day: String(receiveDay || ''),
+    },
+    { 'Content-Type': 'application/x-www-form-urlencoded' },
+  );
+  noteLibraryStep('kugou', 'youth:day:done', {
+    status: body && body.status,
+    errorCode: body && body.error_code,
+  });
+  return body || { status: 0, error_code: 401, data: {} };
+}
+
+/**
+ * KuGouMusicApi `/youth/day/vip/upgrade`.
+ *
+ * The upstream PC build sends `ad_type=1` after the listen-song reward. This is the server-side
+ * step that promotes the temporary listen entitlement so the normal playback endpoints accept it.
+ */
+export async function upgradeKGYouthDayVip(cookieHeader, userId) {
+  cookieHeader = cookieHeader || await getKGCookie();
+  const resolvedUserId = String(userId || kgCookieUserId(cookieHeader) || '').trim();
+  if (!resolvedUserId) return { status: 0, error_code: 401, data: {} };
+  noteLibraryStep('kugou', 'youth:upgrade:start', { userId: resolvedUserId.slice(0, 6) });
+  const body = await kgPostAndroidSigned(
+    'https://gateway.kugou.com',
+    '/youth/v1/listen_song/upgrade_vip_reward',
+    cookieHeader,
+    undefined,
+    {
+      appid: KG_LITE_APPID,
+      clientver: KG_LITE_CLIENTVER,
+      kugouid: Number(resolvedUserId) || resolvedUserId,
+      ad_type: 1,
+    },
+    { 'Content-Type': 'application/x-www-form-urlencoded' },
+  );
+  noteLibraryStep('kugou', 'youth:upgrade:done', {
+    status: body && body.status,
+    errorCode: body && body.error_code,
+  });
+  return body || { status: 0, error_code: 401, data: {} };
 }
 
 let kgFavoriteListIdCache = { key: '', listId: '', at: 0 };

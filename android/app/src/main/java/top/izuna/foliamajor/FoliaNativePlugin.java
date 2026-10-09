@@ -800,6 +800,7 @@ public class FoliaNativePlugin extends Plugin {
     /** Returns the bounded native crash trail for the settings diagnostics report. */
     @PluginMethod
     public void getCrashDiagnostics(PluginCall call) {
+        CrashDiagnostics.collectHistoricalExits(getContext());
         JSObject result = new JSObject();
         result.put("history", CrashDiagnostics.read(getContext()));
         call.resolve(result);

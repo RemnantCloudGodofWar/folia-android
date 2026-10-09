@@ -1,19 +1,25 @@
 package top.izuna.foliamajor;
 
 import android.os.Bundle;
+import android.os.SystemClock;
+import android.webkit.RenderProcessGoneDetail;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 
 import androidx.activity.OnBackPressedCallback;
 
 import com.getcapacitor.BridgeActivity;
+import com.getcapacitor.WebViewListener;
 
 public class MainActivity extends BridgeActivity {
+    private long lastWebViewRecoveryAt = 0L;
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
         CrashDiagnostics.install(getApplicationContext());
         registerPlugin(FoliaNativePlugin.class);
         super.onCreate(savedInstanceState);
+        installWebViewRendererGuard();
         WebView webView = getBridge().getWebView();
         WebSettings settings = webView.getSettings();
         settings.setMediaPlaybackRequiresUserGesture(false);
@@ -35,6 +41,42 @@ public class MainActivity extends BridgeActivity {
         webView.postDelayed(() -> restoreAdaptiveLayout(webView), 1500);
         webView.postDelayed(() -> PhoneFitCutout.apply(this), 500);
         webView.postDelayed(() -> PhoneFitCutout.apply(this), 1500);
+    }
+
+    /**
+     * A dead WebView renderer kills the Android process when the client returns false.
+     * Record the reason, then recreate once; a repeated death exits normally instead of
+     * entering a renderer restart loop.
+     */
+    private void installWebViewRendererGuard() {
+        getBridge().addWebViewListener(new WebViewListener() {
+            @Override
+            public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+                boolean didCrash = detail != null && detail.didCrash();
+                int priority = detail == null ? -1 : detail.rendererPriorityAtExit();
+                CrashDiagnostics.recordText(
+                    getApplicationContext(),
+                    "webview-renderer-gone",
+                    "renderer",
+                    didCrash ? "renderer-crash" : "renderer-killed",
+                    "didCrash=" + didCrash + " priorityAtExit=" + priority,
+                    "Capacitor WebView renderer process ended"
+                );
+
+                long now = SystemClock.elapsedRealtime();
+                runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
+                    if (now - lastWebViewRecoveryAt > 15_000L) {
+                        lastWebViewRecoveryAt = now;
+                        if (view != null) view.destroy();
+                        recreate();
+                    } else {
+                        finish();
+                    }
+                });
+                return true;
+            }
+        });
     }
 
     @Override

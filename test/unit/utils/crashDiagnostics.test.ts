@@ -62,4 +62,31 @@ describe('crash diagnostics', () => {
         await clearCrashDiagnostics();
         expect(clearCrashDiagnostics).toHaveBeenCalledTimes(1);
     });
+
+    it('keeps Android process-exit records returned by the native bridge', async () => {
+        vi.stubGlobal('localStorage', createStorage());
+        const nativeHistory = JSON.stringify([{
+            at: '2026-10-09T14:36:01.000Z',
+            source: 'android-exit',
+            thread: 'system',
+            type: 'process-exit:CRASH_NATIVE',
+            message: 'process=top.izuna.foliamajor reason=CRASH_NATIVE status=11',
+            stack: 'signal 11 (SIGSEGV)',
+        }]);
+        const getCrashDiagnostics = vi.fn(async () => ({ history: nativeHistory }));
+        vi.stubGlobal('window', {
+            Capacitor: { Plugins: { FoliaNative: { getCrashDiagnostics } } },
+        });
+
+        const entries = await readCrashDiagnostics();
+
+        expect(entries).toHaveLength(1);
+        expect(entries[0]).toMatchObject({
+            source: 'android-exit',
+            thread: 'system',
+            type: 'process-exit:CRASH_NATIVE',
+        });
+        expect(entries[0].message).toContain('reason=CRASH_NATIVE');
+        expect(entries[0].stack).toContain('SIGSEGV');
+    });
 });

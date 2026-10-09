@@ -118,7 +118,7 @@ const readDisplayCutoutLines = async (): Promise<string[]> => {
             hasCutout?: boolean;
             safeInsets?: { left?: number; top?: number; right?: number; bottom?: number };
             boundingRects?: Array<{ left?: number; top?: number; right?: number; bottom?: number }>;
-            screenHeightDp?: number;
+            screenHeightPx?: number;
             decorHeightPx?: number;
             contentHeightPx?: number;
             webViewHeightPx?: number;
@@ -142,7 +142,7 @@ const readDisplayCutoutLines = async (): Promise<string[]> => {
             rects.length
                 ? `  bounding rects: ${rects.map(rect => `[${rect.left ?? 0},${rect.top ?? 0},${rect.right ?? 0},${rect.bottom ?? 0}]`).join(' ')}`
                 : '  bounding rects: (none)',
-            `  height: screen=${snapshot.screenHeightDp ?? 'n/a'}`
+            `  height: screen=${snapshot.screenHeightPx ?? 'n/a'}`
                 + ` decor=${snapshot.decorHeightPx ?? 'n/a'}`
                 + ` content=${snapshot.contentHeightPx ?? 'n/a'}`,
             `  web view: height=${snapshot.webViewHeightPx ?? 'n/a'}`

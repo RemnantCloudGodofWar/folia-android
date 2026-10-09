@@ -41,6 +41,7 @@ import java.util.List;
 final class PhoneFitCutout {
     private static final String TAG = "FoliaPhoneFitCutout";
     private static final String INSET_LISTENER_TAG = "folia-cutout-inset-listener";
+    private static final String DECOR_PADDING_GUARD_TAG = "folia-cutout-decor-padding-guard";
 
     private PhoneFitCutout() {
     }
@@ -85,7 +86,7 @@ final class PhoneFitCutout {
                 // 部分 ROM 会把 inset 写进 decor 的 padding，清掉它窗口才真的铺到顶。
                 decor.setPadding(0, 0, 0, 0);
             }
-            applyEdgeToEdge(decor);
+            applyEdgeToEdge(decor, window);
             return true;
         } catch (Throwable error) {
             Log.w(TAG, "apply cutout mode failed", error);
@@ -101,10 +102,16 @@ final class PhoneFitCutout {
      * 真的延伸到顶部。监听器常驻，重新布局或系统栏临时划出后再回来也不会反弹。
      */
     @SuppressWarnings("deprecation")
-    private static void applyEdgeToEdge(View decor) {
+    private static void applyEdgeToEdge(View decor, Window window) {
         if (decor == null) {
             return;
         }
+        // ① decor 自己会被系统垫 top padding（实测 104px，等于挖孔 safeInset.top）。
+        //    这里既清一次，也挂布局监听：系统每次重新布局回填时立刻压回 0。
+        clearDecorPadding(decor);
+        installDecorPaddingGuard(decor);
+        // ② 同步改写 decor 收到的 insets：把 systemBars 归零，系统就不会再按 inset 垫 padding。
+        installDecorInsetListener(decor);
         View root = decor;
         if (decor instanceof ViewGroup) {
             ViewGroup group = (ViewGroup) decor;
@@ -158,6 +165,59 @@ final class PhoneFitCutout {
                 clearInsetPadding(group.getChildAt(index), depth - 1);
             }
         }
+    }
+
+    /** decor 自身被系统垫的 top padding；实测正好等于挖孔 safeInset.top。 */
+    private static boolean hasDecorPadding(View decor) {
+        return decor.getPaddingTop() != 0
+            || decor.getPaddingBottom() != 0
+            || decor.getPaddingLeft() != 0
+            || decor.getPaddingRight() != 0;
+    }
+
+    private static void clearDecorPadding(View decor) {
+        if (decor != null && hasDecorPadding(decor)) {
+            decor.setPadding(0, 0, 0, 0);
+        }
+    }
+
+    /**
+     * 系统每次重新布局都会把 cutout/状态栏的 inset 重新写成 decor 的 padding，
+     * 一次性清掉会被立刻回填。挂布局监听，在每次布局发生时压回 0。
+     *
+     * 只在确实有 padding 时才写，避免监听器自己触发新的布局形成死循环。
+     */
+    private static void installDecorPaddingGuard(final View decor) {
+        if (decor == null || decor.getTag(DECOR_PADDING_GUARD_TAG.hashCode()) != null) {
+            return;
+        }
+        decor.setTag(DECOR_PADDING_GUARD_TAG.hashCode(), Boolean.TRUE);
+        decor.getViewTreeObserver().addOnGlobalLayoutListener(() -> clearDecorPadding(decor));
+    }
+
+    /**
+     * 改写 decor 收到的 window insets，把 systemBars 归零。
+     *
+     * 这是比「事后清 padding」更根上的做法：系统拿不到 systemBars 的 inset，就不会再按它
+     * 垫 padding。两者一起用，兼容那些不走 setOnApplyWindowInsetsListener 的 ROM。
+     */
+    @SuppressWarnings("deprecation")
+    private static void installDecorInsetListener(final View decor) {
+        if (decor == null) {
+            return;
+        }
+        ViewCompat.setOnApplyWindowInsetsListener(decor, (view, insets) -> {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                return new WindowInsetsCompat.Builder(insets)
+                    .setInsets(
+                        WindowInsetsCompat.Type.systemBars(),
+                        androidx.core.graphics.Insets.NONE
+                    )
+                    .build();
+            }
+            return insets;
+        });
+        ViewCompat.requestApplyInsets(decor);
     }
 
     /** 挖孔现场，供诊断报告导出。字段固定为英文。 */

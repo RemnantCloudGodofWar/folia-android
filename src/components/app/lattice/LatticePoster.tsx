@@ -206,10 +206,14 @@ function LatticePoster({
                 ? { duration: 0 }
                 : landing === null
                     ? {
-                        type: 'spring', stiffness: 300, damping: 34,
-                        opacity: { duration: 0.26, ease: 'easeOut' },
-                        scaleX: { duration: 0.3, ease: 'easeOut' },
-                        scaleY: { duration: 0.3, ease: 'easeOut' },
+                        // Width/height are layout properties. A spring keeps repainting every poster
+                        // in the expanded block longer than this interaction needs; a timed ease-out
+                        // gives Android WebView a bounded amount of work per selection.
+                        duration: 0.46,
+                        ease: [0.22, 1, 0.36, 1],
+                        opacity: { duration: 0.34, ease: 'easeOut' },
+                        scaleX: { duration: 0.36, ease: 'easeOut' },
+                        scaleY: { duration: 0.36, ease: 'easeOut' },
                     }
                     : {
                         type: 'spring', stiffness: 360, damping: 24, delay: landing,

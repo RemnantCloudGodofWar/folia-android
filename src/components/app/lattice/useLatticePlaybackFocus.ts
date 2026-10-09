@@ -16,6 +16,10 @@ type PlaybackFocusOptions = {
     /** Held false until the wall has measured itself; centring needs the real viewport. */
     ready: boolean;
     tiles: LatticeTile[];
+    /** The poster that is already expanded, if any. */
+    activePoster: ActiveLatticePoster | null;
+    /** IDs of posters currently mounted, so a visible duplicate is not re-focused. */
+    renderedInstanceIds: ReadonlySet<string>;
     geometry: LatticeGeometry;
     metrics: WallMetrics;
     getViewportCenter: () => { x: number; y: number };
@@ -28,6 +32,8 @@ export const useLatticePlaybackFocus = ({
     currentSong,
     ready,
     tiles,
+    activePoster,
+    renderedInstanceIds,
     geometry,
     metrics,
     getViewportCenter,
@@ -44,6 +50,13 @@ export const useLatticePlaybackFocus = ({
     // write to that store — and re-render App, and with it the whole wall — for nothing.
     const { focusCurrentSong } = useStableCallbacks({ focusCurrentSong: (options?: { instant?: boolean }) => {
         if (!currentSongKey) return;
+        // The wall repeats each song in multiple cells. If the user already opened a copy that is
+        // still mounted, following must not expand a second copy and reflow the whole block.
+        if (activePoster
+            && activePoster.tile.id === currentSongKey
+            && renderedInstanceIds.has(activePoster.instance.instanceId)) {
+            return;
+        }
         const queueIndex = tiles.findIndex(tile => tile.id === currentSongKey);
         if (queueIndex < 0) return;
         // The song is drawn in every cell; jump to whichever copy is closest to what is on screen.

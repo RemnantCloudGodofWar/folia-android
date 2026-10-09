@@ -111,7 +111,11 @@ export default function PosterWall({
     const applyCamera = useCallback((next: LatticeCamera, updateBounds = false) => {
         cameraRef.current = next;
         if (worldRef.current) {
-            worldRef.current.style.transform = `translate3d(${next.x}px, ${next.y}px, 0) scale(${next.scale})`;
+            // A 3D translation promotes the entire poster world to a compositor layer. On a
+            // phone-sized GPU that layer can exceed the maximum texture size and be rebuilt
+            // repeatedly while posters resize; 2D transforms avoid that until a pan actually needs
+            // compositing.
+            worldRef.current.style.transform = `translate(${next.x}px, ${next.y}px) scale(${next.scale})`;
         }
         publishCurrentPosterVisibility(next);
         if (!updateBounds || frameRef.current !== null) return;
@@ -210,6 +214,12 @@ export default function PosterWall({
         return [...visible, activePoster.instance];
     }, [activePoster, bounds, geometry, measured, tiles.length]);
 
+    // Only changes when the mounted instance set changes, not on every camera frame.
+    const renderedInstanceIds = useMemo(
+        () => new Set(instances.map(instance => instance.instanceId)),
+        [instances],
+    );
+
     // World point the viewport is centred on; both the keyboard seed and playback follow need it.
     const getViewportCenter = useCallback(() => {
         const camera = cameraRef.current;
@@ -292,6 +302,8 @@ export default function PosterWall({
         currentSong,
         ready: measured,
         tiles,
+        activePoster,
+        renderedInstanceIds,
         geometry,
         metrics: METRICS,
         getViewportCenter,

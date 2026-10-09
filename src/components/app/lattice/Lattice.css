@@ -77,6 +77,8 @@
     cursor: grab;
     touch-action: none;
     overscroll-behavior: none;
+    /* Keep tile repaints inside the wall instead of invalidating the whole document. */
+    contain: layout paint;
 }
 
 .lattice-field:active { cursor: grabbing; }
@@ -85,7 +87,6 @@
     position: absolute;
     inset: 0;
     transform-origin: 0 0;
-    will-change: transform;
 }
 
 .lattice-poster {

@@ -180,7 +180,9 @@ html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [dat
 }
 
 html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-ponder='player-bar'] {
-  max-height: 46px;
+  /* 展开态是两行（标题/按钮 + 进度条）。46px 装不下，进度条会被挤到胶囊外面，
+     所以放开高度并收紧行距，让两行都留在胶囊里。 */
+  max-height: 60px;
   padding: 4px 10px !important;
 }
 
@@ -193,7 +195,7 @@ html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [dat
 
 html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-folia-player-bar-expanded='true'] > div {
   column-gap: 6px !important;
-  row-gap: 2px !important;
+  row-gap: 0 !important;
 }
 
 html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-folia-player-bar-play='true'] {
@@ -223,6 +225,7 @@ html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [dat
 
 html[data-folia-phone-fit='true'][data-folia-phone-orientation='landscape'] [data-folia-player-bar-progress='true'] {
   padding-inline: 0 !important;
+  overflow: hidden;
 }
 
 /* The title navigator reserves 56px on each side for its hover arrows. In the phone bar that

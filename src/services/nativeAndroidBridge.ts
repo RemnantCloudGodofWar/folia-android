@@ -230,7 +230,12 @@ const installFetchShim = (plugin: NativePlugin) => {
     }
 
     const method = (init?.method || request?.method || 'GET').toUpperCase();
-    const headers = new Headers(request?.headers || init?.headers || {});
+    const headers = new Headers();
+    const requestHeaders = request?.headers ? Array.from(request.headers.entries()) : [];
+    const initHeaders = init?.headers ? Array.from(new Headers(init.headers).entries()) : [];
+    for (const [name, value] of [...requestHeaders, ...initHeaders]) {
+      headers.append(name, toHeaderSafeValue(value));
+    }
     const serialized = await serializeBody(init?.body ?? null);
     if (serialized.contentType && !headers.has('content-type')) {
       headers.set('content-type', serialized.contentType);
@@ -296,6 +301,21 @@ const installFetchShim = (plugin: NativePlugin) => {
       headers: responseHeaders,
     });
   };
+};
+
+/**
+ * Headers are decoded by Chromium as ISO-8859-1. A single Chinese character in an upstream
+ * cookie/header otherwise throws before the native request is even dispatched. Keep Latin-1
+ * intact and percent-encode only the code points Chromium rejects.
+ */
+export const toHeaderSafeValue = (value: unknown): string => {
+  const text = value == null ? '' : String(value);
+  let safe = '';
+  for (const character of text) {
+    const codePoint = character.codePointAt(0) ?? 0;
+    safe += codePoint <= 0xff ? character : encodeURIComponent(character);
+  }
+  return safe;
 };
 
 const flushQueuedRequests = () => {

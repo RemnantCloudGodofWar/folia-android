@@ -46,3 +46,13 @@ describe('nativeAndroidBridge request routing', () => {
         expect(isBridgedApiUrl('/assets/cover.png')).toBe(false);
     });
 });
+
+describe('nativeAndroidBridge header safety', () => {
+    it('percent-encodes code points Chromium cannot put in Headers', async () => {
+        const { toHeaderSafeValue } = await import('@/services/nativeAndroidBridge');
+
+        expect(toHeaderSafeValue('plain ascii')).toBe('plain ascii');
+        expect(toHeaderSafeValue('café')).toBe('café');
+        expect(toHeaderSafeValue('用户凭证')).toBe('%E7%94%A8%E6%88%B7%E5%87%AD%E8%AF%81');
+    });
+});

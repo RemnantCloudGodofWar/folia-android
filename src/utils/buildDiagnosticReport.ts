@@ -53,13 +53,41 @@ const readPlaybackContinuityLines = (): string[] => {
     const lastEventAt = continuity.lastEventAt
         ? new Date(continuity.lastEventAt).toISOString()
         : '(not recorded)';
+    const stream = continuity.stream;
+    const decodeKbps = (() => {
+        const bytes = continuity.decodedBytes;
+        const media = continuity.decodedMediaSec;
+        const baseBytes = continuity.decodeBaseBytes;
+        const baseMedia = continuity.decodeBaseMediaSec;
+        if (bytes === null || media === null || baseBytes === null || baseMedia === null) return null;
+        const deltaBytes = bytes - baseBytes;
+        const deltaMedia = media - baseMedia;
+        if (deltaBytes <= 0 || deltaMedia <= 1) return null;
+        return (deltaBytes * 8) / deltaMedia / 1000;
+    })();
     return [
         `  source: ${continuity.source}`,
+        // 「歌卡」这类反馈先看这一行：拿到的是 mp3 还是 flac、多少码率、是不是试听片段。
+        `  stream: ${stream
+            ? `${stream.provider} level=${stream.resolvedLevel}`
+                + `${stream.requestedLevel ? `(requested ${stream.requestedLevel})` : ''}`
+                + ` br=${stream.bitrateKbps === null ? 'n/a' : `${Math.round(stream.bitrateKbps)}kbps`}`
+                + ` format=${stream.format} host=${stream.host}`
+                + `${stream.sizeMb === null ? '' : ` size=${stream.sizeMb.toFixed(1)}MB`}`
+                + `${stream.trial ? ' TRIAL-CLIP' : ''}`
+            : '(not recorded)'}`,
         `  deck: ${continuity.deck} readyState=${continuity.readyState} networkState=${continuity.networkState}`,
         `  buffer: ahead=${formatSeconds(continuity.bufferedAheadSec)} ranges=${continuity.bufferedRanges}`,
         `  interruptions: waiting=${continuity.waitingCount} total=${formatMilliseconds(continuity.waitingTotalMs)}`
             + ` max=${formatMilliseconds(continuity.waitingMaxMs)} last=${formatMilliseconds(continuity.lastWaitingMs)}`,
         `  network stalls: stalled=${continuity.stalledCount} errors=${continuity.errorCount}`,
+        // 播放中如果位置/速率被改过（我们或系统），会在这里留下计数；配合解码进度就能分清
+        // 「网络不够」「解码跟不上」「我们动了播放位置」这三种完全不同的卡。
+        `  element events: seeking=${continuity.seekingCount} seeked=${continuity.seekedCount}`
+            + ` ratechange=${continuity.rateChangeCount} rate=${continuity.playbackRate ?? 'n/a'}`,
+        `  decode: bytes=${continuity.decodedBytes === null ? 'n/a' : `${(continuity.decodedBytes / 1048576).toFixed(1)}MB`}`
+            + ` media=${formatSeconds(continuity.decodedMediaSec)}`
+            + ` avg=${decodeKbps === null ? 'n/a' : `≈${Math.round(decodeKbps)}kbps`}`,
         `  main-thread stalls: count=${continuity.clockLagCount}`
             + ` total=${formatMilliseconds(continuity.clockLagTotalMs)}`
             + ` max=${formatMilliseconds(continuity.clockLagMaxMs)}`

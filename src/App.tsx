@@ -2469,6 +2469,7 @@ export default function App() {
                 automix.checkTransitionPoint(audioElement.currentTime);
             }}
             onSeeked={(e) => {
+                noteAudioElementEvent('seeked', e.currentTarget, deck, automix.isActiveDeck(e.currentTarget));
                 // Same split as onTimeUpdate: whichever deck the bar is showing is the one a seek
                 // on it has to be reflected from.
                 const isActive = automix.isActiveDeck(e.currentTarget);
@@ -2553,6 +2554,9 @@ export default function App() {
             // told apart from a source that resolved fine and then failed inside the element.
             onCanPlay={(e) => noteAudioElementEvent('canplay', e.currentTarget, deck, automix.isActiveDeck(e.currentTarget))}
             onStalled={(e) => noteAudioElementEvent('stalled', e.currentTarget, deck, automix.isActiveDeck(e.currentTarget))}
+            // 播放中如果有东西在动播放位置或速率，报告里会留下计数：排查「歌卡」时最容易漏掉的一条。
+            onSeeking={(e) => noteAudioElementEvent('seeking', e.currentTarget, deck, automix.isActiveDeck(e.currentTarget))}
+            onRateChange={(e) => noteAudioElementEvent('ratechange', e.currentTarget, deck, automix.isActiveDeck(e.currentTarget))}
             onWaiting={(e) => {
                 if (automix.isActiveDeck(e.currentTarget)) {
                     noteAudioElementEvent('waiting', e.currentTarget, deck);

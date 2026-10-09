@@ -21,6 +21,7 @@ import { readProviderSessionValue, writeProviderSessionValue } from './providerS
 import { collectLoginBackendDiagnostics } from './loginBackendDiagnostics';
 import { canRunLoginSelfCheck, runLoginSelfCheck } from './loginSelfCheck';
 import { formatDiagnosticClock } from '../../utils/qrLoginDiagnosticReport';
+import { notePlaybackStreamInfo } from '../../utils/mediaDiagnostics';
 import { isConnectionResetMessage, isNetworkFailureMessage } from '../../../shared/networkErrorText.mjs';
 
 // src/services/onlineMusic/neteaseProvider.ts
@@ -35,6 +36,25 @@ const mapQuality = (quality: AudioQualityPreference): string => {
     if (quality === 'standard') return 'standard';
     if (quality === 'high') return 'exhigh';
     return quality;
+};
+
+/** 诊断只回报主机名：播放地址带着签名与 token，整条写进报告没必要。 */
+const mediaHostOf = (url: string): string => {
+    try {
+        return new URL(url).host || 'unknown';
+    } catch {
+        return 'unparseable';
+    }
+};
+
+/** 文件后缀（mp3 / flac / m4a）用来判断解码负担。 */
+const mediaSuffixOf = (url: string): string => {
+    try {
+        const match = new URL(url).pathname.match(/\.([a-z0-9]{2,5})$/i);
+        return match ? match[1].toLowerCase() : 'unknown';
+    } catch {
+        return 'unknown';
+    }
 };
 
 /**
@@ -315,8 +335,21 @@ export const neteaseProvider: OnlineMusicProvider = {
             const rawUrl = raw?.url;
             if (!rawUrl) return null;
             const trackGain = toFiniteNumber(raw?.gain);
+            const url = String(rawUrl).replace(/^http:/, 'https:');
+            // 用户反馈「歌卡」时，先看拿到的到底是什么流：码率、格式、是不是试听片段。
+            // 只记元数据与主机名，签名路径与 token 不进报告。
+            notePlaybackStreamInfo({
+                provider: 'netease',
+                requestedLevel: mapQuality(quality),
+                resolvedLevel: String(raw?.level ?? 'unknown'),
+                bitrateKbps: Number(raw?.br) || null,
+                format: String(raw?.type ?? mediaSuffixOf(url)),
+                host: mediaHostOf(url),
+                sizeMb: Number(raw?.size) ? Number(raw.size) / 1048576 : null,
+                trial: Boolean(raw?.freeTrialInfo),
+            });
             return {
-                url: String(rawUrl).replace(/^http:/, 'https:'),
+                url,
                 fetchedAt: Date.now(),
                 quality,
                 ...(trackGain === undefined ? {} : { replayGain: { trackGain } }),

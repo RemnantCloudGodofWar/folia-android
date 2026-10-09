@@ -121,6 +121,10 @@ const readDisplayCutoutLines = async (): Promise<string[]> => {
             screenHeightDp?: number;
             decorHeightPx?: number;
             contentHeightPx?: number;
+            webViewHeightPx?: number;
+            webViewPaddingTopPx?: number;
+            contentPaddingTopPx?: number;
+            decorPaddingTopPx?: number;
             visibleFrame?: { left?: number; top?: number; right?: number; bottom?: number };
         } | null;
         if (!snapshot || snapshot.available === false) {
@@ -141,6 +145,10 @@ const readDisplayCutoutLines = async (): Promise<string[]> => {
             `  height: screen=${snapshot.screenHeightDp ?? 'n/a'}`
                 + ` decor=${snapshot.decorHeightPx ?? 'n/a'}`
                 + ` content=${snapshot.contentHeightPx ?? 'n/a'}`,
+            `  web view: height=${snapshot.webViewHeightPx ?? 'n/a'}`
+                + ` paddingTop=${snapshot.webViewPaddingTopPx ?? 'n/a'}`,
+            `  padding: decorTop=${snapshot.decorPaddingTopPx ?? 'n/a'}`
+                + ` contentTop=${snapshot.contentPaddingTopPx ?? 'n/a'}`,
             snapshot.visibleFrame
                 ? `  visible frame: [${snapshot.visibleFrame.left ?? 0},${snapshot.visibleFrame.top ?? 0},`
                     + `${snapshot.visibleFrame.right ?? 0},${snapshot.visibleFrame.bottom ?? 0}]`

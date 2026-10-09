@@ -166,7 +166,7 @@ function mergeCookiePairs(map, pairs) {
   return map;
 }
 
-function buildLoginSession(cookie) {
+export function buildLoginSession(cookie) {
   const cookieList = String(cookie || '')
     .split(';')
     .map((item) => item.trim())
@@ -221,7 +221,7 @@ async function withInjectedCookie(cookieHeader, urlFilters, run) {
   }
 }
 
-async function fetchWithTimeout(input, init = {}, timeout = 10000) {
+export async function fetchWithTimeout(input, init = {}, timeout = 10000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout);
   try {

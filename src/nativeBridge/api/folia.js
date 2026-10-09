@@ -34,6 +34,11 @@ import {
   qqSongDetailsBatch,
 } from './qq.js';
 import {
+  qqWechatGetLoginQr,
+  qqWechatCheckLoginQr,
+  qqWechatCancelLoginQr,
+} from './qq-wechat-login.js';
+import {
   claimKGYouthDayVip,
   ensureKGCookie,
   getKGYouthUnionVip,
@@ -127,6 +132,11 @@ function decodeBridgeKey(value) {
   } catch (_) {
     return {};
   }
+}
+
+/** 扫码通道归一：只有 wechat 走微信 Web OAuth，其余（含缺省）都按 qq 处理。 */
+function qqChannelOf(value) {
+  return String(value || '').toLowerCase() === 'wechat' ? 'wechat' : 'qq';
 }
 
 function qqProfile(status) {
@@ -576,7 +586,8 @@ async function handleFoliaQqRequest(input, url) {
 async function routeFoliaQqRequest(operation, params, segments, url, cookie) {
 
   if (operation === 'login_channels') {
-    return { code: 200, data: { channels: ['qq'] } };
+    // 本地桥同时支持两条扫码通道：qq（ptlogin + MQTT）与 wechat（微信 OAuth + musicu）。
+    return { code: 200, data: { channels: ['qq', 'wechat'] } };
   }
   if (operation === 'login_status') {
     const status = await getQQLoginStatus(cookie);
@@ -596,8 +607,12 @@ async function routeFoliaQqRequest(operation, params, segments, url, cookie) {
     return { code: 200 };
   }
   if (operation === 'login_qr_key') {
-    const qr = await handleQQLoginQrCreate();
+    const channel = qqChannelOf(firstValue(params.channel, url.searchParams.get('channel')));
+    const qr = channel === 'wechat'
+      ? await qqWechatGetLoginQr()
+      : await handleQQLoginQrCreate();
     const key = encodeBridgeKey({
+      channel,
       qrsig: qr.qrsig,
       ptqrtoken: qr.ptqrtoken,
       qrimg: qr.qrimg || qr.img,
@@ -616,17 +631,21 @@ async function routeFoliaQqRequest(operation, params, segments, url, cookie) {
   }
   if (operation === 'login_qr_check') {
     const key = decodeBridgeKey(firstValue(params.key, url.searchParams.get('key')));
-    const result = await handleQQLoginQrCheck(key.qrsig, key.ptqrtoken);
+    const result = key.channel === 'wechat'
+      ? await qqWechatCheckLoginQr({ qrsig: key.qrsig, ptqrtoken: key.ptqrtoken })
+      : await handleQQLoginQrCheck(key.qrsig, key.ptqrtoken);
     if (result?.isOk || result?.loggedIn) {
       return { code: 803, message: result.message || 'Login successful', cookie: '' };
     }
     if (result?.refresh) return { code: 800, message: result.message || 'QR expired' };
-    if (result?.status === 'scanned' || Number(result?.code) === 67) {
+    if (result?.status === 'scanned' || Number(result?.code) === 67 || Number(result?.code) === 802) {
       return { code: 802, message: result.message || 'Scanned' };
     }
     return { code: 801, message: result?.message || 'Waiting for scan' };
   }
   if (operation === 'login_qr_cancel') {
+    const key = decodeBridgeKey(firstValue(params.key, url.searchParams.get('key')));
+    if (key.channel === 'wechat') qqWechatCancelLoginQr(key.qrsig);
     return { code: 200 };
   }
   if (operation === 'music_play') {

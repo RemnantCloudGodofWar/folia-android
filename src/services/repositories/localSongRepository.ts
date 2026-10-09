@@ -32,23 +32,54 @@ export const putLocalSongs = async (songs: LocalSong[]): Promise<void> => {
   }
 };
 
+const LOCAL_SONG_MAINTENANCE_CHUNK = 64;
+
+const yieldToMainThread = (): Promise<void> => (
+  new Promise(resolve => setTimeout(resolve, 0))
+);
+
 export const readLocalSongs = async (): Promise<LocalSong[]> => {
   const storedSongs = await appDatabase.local_music.toArray();
-  const normalized = storedSongs.map(normalizeLocalSongFromStorage);
-  const sanitizedSongs = normalized.filter(item => item.changed).map(item => item.value);
+  // Let IndexedDB's onsuccess callback finish before doing per-record migration work; otherwise
+  // a large library makes that callback itself a long task and stalls playback startup.
+  await yieldToMainThread();
+
+  const normalizedSongs: LocalSong[] = [];
+  const sanitizedSongs: LocalSong[] = [];
+  for (let index = 0; index < storedSongs.length; index += 1) {
+    const normalized = normalizeLocalSongFromStorage(storedSongs[index]);
+    normalizedSongs.push(normalized.value);
+    if (normalized.changed) sanitizedSongs.push(normalized.value);
+    if ((index + 1) % LOCAL_SONG_MAINTENANCE_CHUNK === 0) {
+      await yieldToMainThread();
+    }
+  }
+
   if (sanitizedSongs.length > 0) {
     void putLocalSongs(sanitizedSongs).catch(error => {
       console.warn('[DB] Failed to write back sanitized local song covers', error);
     });
   }
 
-  const migration = migrateLocalSongsRenderHints(normalized.map(item => item.value));
-  if (migration.changedSongs.length > 0) {
-    void putLocalSongs(migration.changedSongs).catch(error => {
+  const migratedSongs: LocalSong[] = [];
+  const migratedChangedSongs: LocalSong[] = [];
+  for (let index = 0; index < normalizedSongs.length; index += LOCAL_SONG_MAINTENANCE_CHUNK) {
+    const migration = migrateLocalSongsRenderHints(
+      normalizedSongs.slice(index, index + LOCAL_SONG_MAINTENANCE_CHUNK),
+    );
+    migratedSongs.push(...migration.value);
+    migratedChangedSongs.push(...migration.changedSongs);
+    if (index + LOCAL_SONG_MAINTENANCE_CHUNK < normalizedSongs.length) {
+      await yieldToMainThread();
+    }
+  }
+
+  if (migratedChangedSongs.length > 0) {
+    void putLocalSongs(migratedChangedSongs).catch(error => {
       console.warn('[DB] Failed to write back migrated local song lyrics', error);
     });
   }
-  return migration.value;
+  return migratedSongs;
 };
 
 export const removeLocalSong = async (id: string): Promise<void> => {

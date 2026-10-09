@@ -11,7 +11,7 @@
  */
 
 import { UA } from './weapi.js';
-import { clearCookieCache, setBrowserCookies } from './cookies.js';
+import { clearCookieCache, saveProviderCookie, setBrowserCookies } from './cookies.js';
 import { noteQrLoginStep, resetQrLoginTrace } from './qrLoginTrace.js';
 import { buildLoginSession, clearQQPlatformSessionCookies, fetchWithTimeout } from './qq-login-qr.js';
 
@@ -238,6 +238,8 @@ export async function qqWechatCheckLoginQr(params = {}) {
     await setBrowserCookies('https://qq.com/', sessionData.cookie);
     await setBrowserCookies('https://graph.qq.com/', sessionData.cookie);
     clearCookieCache();
+    // 记住「当前会话是这一串」：getQQCookie 的账号凭据以它为准，否则罐里的旧账号会盖掉新登录。
+    await saveProviderCookie('qq', sessionData.cookie);
     sessions.delete(sessionKey(uuid));
     noteQrLoginStep('wx:qr:done:ok');
     return {

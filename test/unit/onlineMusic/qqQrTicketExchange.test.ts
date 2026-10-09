@@ -13,6 +13,8 @@ let checkSigCalls = 0;
 let jarPairs: string[] = [];
 /** 模拟「删不掉」的 cookie（域 cookie 用 host-only 删除够不着），用来验证响应头优先。 */
 let stickyCookieNames: string[] = [];
+/** chrome.storage.local 的桩：桥会把登录后的会话串存在这里（getQQCookie 的账号来源）。 */
+let bridgeStorage: Record<string, string> = {};
 
 const cookieEntry = (pair: string) => {
     const eq = pair.indexOf('=');
@@ -70,7 +72,19 @@ const stubBrowser = () => {
                 return {};
             },
         },
-        storage: { local: { get: async () => ({}), set: async () => undefined } },
+        storage: {
+            local: {
+                get: async (keys: string | string[]) => {
+                    const list = Array.isArray(keys) ? keys : [keys];
+                    return Object.fromEntries(list
+                        .filter(key => bridgeStorage[key] !== undefined)
+                        .map(key => [key, bridgeStorage[key]]));
+                },
+                set: async (values: Record<string, string>) => {
+                    Object.entries(values).forEach(([key, value]) => { bridgeStorage[key] = value; });
+                },
+            },
+        },
     });
 };
 
@@ -102,6 +116,7 @@ beforeEach(() => {
     checkSigCalls = 0;
     jarPairs = [];
     stickyCookieNames = [];
+    bridgeStorage = {};
     fetchMock.mockReset();
     vi.stubGlobal('fetch', fetchMock);
     stubBrowser();
@@ -220,6 +235,42 @@ describe('QQ QR login after a WeChat session left cookies behind', () => {
         expect(names).not.toContain('str_musicid');
         // 传输类 cookie（ptcz / RK 这类）不该被清掉，否则会把正常的反爬指纹也一起弄丢。
         expect(names).toContain('ptcz');
+    });
+
+    // 现场报告（0.7.15-android.59）：登录成功，但 login-status 读到的是 uinTail=…4168 的另一个账号，
+    // 歌单只剩 1 首、头像和昵称全靠兜底。原因是罐里旧账号的 uin/wxuin 盖过了刚写下的会话。
+    it('keeps the freshly stored session authoritative over leftover jar credentials', async () => {
+        jarPairs = [
+            'uin=o1234168',
+            'wxuin=1234168',
+            'qm_keyst=leftover-key',
+            'login_type=2',
+            'tmeLoginType=1',
+            'ptcz=transport-cookie',
+        ];
+        stubTicketExchange({ musickey: 'fresh-qq-key' });
+        const { bridge } = await loadBridge();
+        const { handleQQLoginQrCheck } = await import('@/nativeBridge/api/qq.js');
+        const { getQQCookie } = await import('@/nativeBridge/api/cookies.js');
+
+        const result = await handleQQLoginQrCheck('test-qrsig', '1') as unknown as {
+            isOk?: boolean;
+            session?: { cookie?: string };
+        };
+        expect(result.isOk).toBe(true);
+        // 会话必须标成 QQ 通道，并且只带本次扫码的账号。
+        expect(result.session?.cookie).toContain('login_type=1');
+        expect(result.session?.cookie).not.toContain('tmeLoginType');
+        expect(result.session?.cookie).toContain('uin=o2774749');
+
+        // 账号解析（login_status / 歌单 / 播放）用的头必须以刚存下的会话为准。
+        const header = await getQQCookie();
+        expect(header).toContain('uin=o2774749');
+        expect(header).toContain('qm_keyst=fresh-qq-key');
+        expect(header).not.toContain('o1234168');
+        expect(header).not.toContain('leftover-key');
+        // 传输类 cookie 仍然从罐里带上。
+        expect(header).toContain('ptcz=transport-cookie');
     });
 });
 

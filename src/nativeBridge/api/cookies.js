@@ -138,6 +138,46 @@ function mergeCookieHeaders(...headers) {
   return Array.from(merged, ([name, value]) => `${name}=${value}`).join('; ');
 }
 
+// 平台账号凭据。刚登录落下的那串会话就是「本次登录的账号」，必须压过 cookie 罐里同名的残留：
+// 罐里可能还留着上一条通道（微信）或上一个账号的 uin / wxuin / qm_keyst，
+// 让它们赢就会出现「扫的是 A 账号、听的是 B 账号（歌单和头像都是空的）」。
+const QQ_SESSION_AUTHORITY_COOKIE_NAMES = new Set([
+  'uin',
+  'p_uin',
+  'qqmusic_uin',
+  'qm_keyst',
+  'qqmusic_key',
+  'music_key',
+  'p_skey',
+  'skey',
+  'wxuin',
+  'wxopenid',
+  'wxskey',
+  'wxrefresh_token',
+  'str_musicid',
+  'login_type',
+  'tmeLoginType',
+]);
+
+/**
+ * QQ 的会话头：cookie 罐提供传输类 cookie，账号凭据以本次登录落下的会话为准。
+ * 没存过会话时（例如还没登录）行为与整罐合并一致。
+ */
+function mergeQQSessionCookieHeader(stored, collected) {
+  const sessionCookies = parseCookieString(stored);
+  const merged = new Map();
+  Object.entries(parseCookieString(collected)).forEach(([name, value]) => {
+    if (name && value !== '') merged.set(name, value);
+  });
+  Object.entries(sessionCookies).forEach(([name, value]) => {
+    if (!name || value === '') return;
+    // 凭据以会话为准；其余（ptcz / RK 这类搬运 cookie）罐里有就用罐里的更新值。
+    if (QQ_SESSION_AUTHORITY_COOKIE_NAMES.has(name)) merged.set(name, value);
+    else if (!merged.has(name)) merged.set(name, value);
+  });
+  return Array.from(merged, ([name, value]) => `${name}=${value}`).join('; ');
+}
+
 async function withStoredCookie(provider, build) {
   const [collected, stored] = await Promise.all([
     build(),
@@ -208,9 +248,13 @@ export async function getNeteaseCookie() {
 }
 
 export async function getQQCookie() {
-  return withCookieCache('qq', () => withStoredCookie('qq', () => collectCookieHeader(
-    QQ_DOMAINS, QQ_URLS, QQ_COOKIE_KEYS, 'https://y.qq.com/',
-  )));
+  return withCookieCache('qq', async () => {
+    const [collected, stored] = await Promise.all([
+      collectCookieHeader(QQ_DOMAINS, QQ_URLS, QQ_COOKIE_KEYS, 'https://y.qq.com/'),
+      readStoredProviderCookie('qq'),
+    ]);
+    return mergeQQSessionCookieHeader(stored, collected);
+  });
 }
 
 export async function getKGCookie() {
@@ -278,6 +322,33 @@ export async function removeBrowserCookies(baseUrl, names) {
     chrome.cookies.remove({ url: baseUrl, name }).catch(() => null)
   )));
   clearCookieCache();
+}
+
+/**
+ * 一次删掉多个 host × 多个 cookie 名。
+ *
+ * 逐条删除在安卓上每条都要过一次桥、并在原生侧 flush 一次，几十条下来就超过清理的截止时间，
+ * 结果是「以为清了、其实还剩一半」——旧账号的 uin / 登录通道标记就是这么留下来的。
+ * 宿主支持批量时改成一次调用（原生侧循环 + 一次 flush）。
+ */
+export async function removeBrowserCookiesForHosts(hosts, names) {
+  const nameList = (Array.isArray(names) ? names : [names]).filter(Boolean);
+  const hostList = (Array.isArray(hosts) ? hosts : [hosts]).filter(Boolean);
+  if (!nameList.length || !hostList.length) return;
+  const batch = chrome?.cookies?.removeBatch;
+  if (typeof batch === 'function') {
+    try {
+      const removed = await batch(hostList.flatMap(url => nameList.map(name => ({ url, name }))));
+      // 宿主不支持或超时（返回 null）时继续走逐条删除，不能当成已清干净。
+      if (removed) {
+        clearCookieCache();
+        return;
+      }
+    } catch (_) {
+      // 批量失败就退回逐条删除。
+    }
+  }
+  for (const host of hostList) await removeBrowserCookies(host, nameList);
 }
 
 export function hasNeteaseLogin(cookieHeader) {

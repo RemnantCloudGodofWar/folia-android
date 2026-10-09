@@ -28,6 +28,8 @@ import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
 
+import org.json.JSONObject;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -214,6 +216,40 @@ public class FoliaNativePlugin extends Plugin {
         CookieManager.getInstance().flush();
         JSObject result = new JSObject();
         result.put("ok", true);
+        call.resolve(result);
+    }
+
+    /**
+     * 批量删除 cookie：entries 是 [{url, name}, ...]。
+     *
+     * 逐条删除每条都要过一次桥并在原生侧 flush 一次，登录通道切换要清几十条，
+     * 累加起来会超过调用方的截止时间，结果只清掉一半。这里在原生侧一次做完。
+     */
+    @PluginMethod
+    public void cookiesRemoveBatch(PluginCall call) {
+        JSArray entries = call.getArray("entries");
+        if (entries == null || entries.length() == 0) {
+            JSObject empty = new JSObject();
+            empty.put("ok", true);
+            empty.put("removed", 0);
+            call.resolve(empty);
+            return;
+        }
+        CookieManager manager = CookieManager.getInstance();
+        int removed = 0;
+        for (int index = 0; index < entries.length(); index++) {
+            JSONObject entry = entries.optJSONObject(index);
+            if (entry == null) continue;
+            String url = entry.optString("url", "");
+            String name = entry.optString("name", "");
+            if (url == null || url.isEmpty() || name == null || name.isEmpty()) continue;
+            manager.setCookie(url, name + "=; Max-Age=0; path=/");
+            removed++;
+        }
+        if (removed > 0) manager.flush();
+        JSObject result = new JSObject();
+        result.put("ok", true);
+        result.put("removed", removed);
         call.resolve(result);
     }
 

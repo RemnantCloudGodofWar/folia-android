@@ -14,7 +14,12 @@
  */
 
 import { UA } from './weapi.js';
-import { clearCookieCache, removeBrowserCookies, setBrowserCookies } from './cookies.js';
+import {
+  clearCookieCache,
+  removeBrowserCookies,
+  removeBrowserCookiesForHosts,
+  setBrowserCookies,
+} from './cookies.js';
 import { noteQrLoginStep, resetQrLoginTrace } from './qrLoginTrace.js';
 import { readRawSetCookies } from './setCookieHeaders.js';
 
@@ -143,7 +148,9 @@ const CROSS_CHANNEL_COOKIE_NAMES = new Set([
 ].map(name => String(name).toLowerCase()));
 
 // 收尾步骤的硬上限：宿主不回包时不能让登录停在「手机上已确认、应用没反应」。
-const COOKIE_HYGIENE_TIMEOUT_MS = 1200;
+// 清理走一次批量删除（几十条一次过桥），2.5 秒足够；纯逐条删除的旧宿主会超时放弃，
+// 但那只影响卫生，不影响账号解析（会话本身仍压过罐里的残留）。
+const COOKIE_HYGIENE_TIMEOUT_MS = 2500;
 const COOKIE_WRITE_TIMEOUT_MS = 5000;
 
 /** 给一段收尾工作加上截止时间；无论成功、失败还是超时都会结算成 fallback。 */
@@ -171,11 +178,7 @@ function settleWithin(promise, ms, fallback, label) {
  * 这只是会话切换的卫生工作：读不到结果也照常放行，绝不阻塞登录。
  */
 export async function clearQQPlatformSessionCookies() {
-  const cleanup = (async () => {
-    for (const host of WECHAT_COOKIE_HOSTS) {
-      await removeBrowserCookies(host, QQ_PLATFORM_CREDENTIAL_COOKIE_NAMES);
-    }
-  })();
+  const cleanup = removeBrowserCookiesForHosts(WECHAT_COOKIE_HOSTS, QQ_PLATFORM_CREDENTIAL_COOKIE_NAMES);
   await settleWithin(cleanup, COOKIE_HYGIENE_TIMEOUT_MS, undefined, 'qr:clean-platform-cookies');
 }
 
@@ -958,6 +961,11 @@ export async function qqCheckLoginQr(params = {}) {
       if (id) cookieMap.set('uin', `uin=o${id}`);
     }
   } catch (_) {}
+
+  // 明确标记这是 QQ 通道的会话：罐里万一还留着微信通道的 login_type=2 / wxuin，
+  // qqCookieUin 会走微信分支读 wxuin，把别人的账号当成这次扫码的结果。
+  cookieMap.delete('tmeLoginType');
+  cookieMap.set('login_type', 'login_type=1');
 
   // 会话必须有账号 id 和播放票据。账号 id 优先用本次扫码的 uin，缺了就从 check_sig 兜底，
   // 不从 jar 里捡 —— jar 里可能还躺着上一条通道的账号。

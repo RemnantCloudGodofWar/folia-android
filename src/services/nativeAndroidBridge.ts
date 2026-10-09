@@ -41,6 +41,7 @@ type NativePlugin = {
   cookiesGet: (options: Record<string, unknown>) => Promise<{ cookie?: unknown }>;
   cookiesSet: (options: Record<string, unknown>) => Promise<{ ok?: boolean }>;
   cookiesRemove: (options: Record<string, unknown>) => Promise<{ ok?: boolean }>;
+  cookiesRemoveBatch: (options: Record<string, unknown>) => Promise<{ ok?: boolean; removed?: number }>;
   httpRequest: (options: Record<string, unknown>) => Promise<{
     status: number;
     headers?: Array<{ name?: string; value?: string }> | Record<string, string>;
@@ -189,6 +190,16 @@ const installCookieShim = (plugin: NativePlugin) => {
       'cookies.remove',
       null,
       async () => ((await plugin.cookiesRemove(details)).ok ? details : null),
+    ),
+    // 非标准扩展：一次删掉一批 cookie，避免几十条逐个过桥拖过调用方的截止时间。
+    // 失败/超时返回 null，调用方会退回逐条删除。
+    removeBatch: async (entries: Array<{ url: string; name: string }>) => callPlugin(
+      'cookies.removeBatch',
+      null,
+      async () => {
+        await plugin.cookiesRemoveBatch({ entries });
+        return entries;
+      },
     ),
   };
   chromeObject.declarativeNetRequest = {

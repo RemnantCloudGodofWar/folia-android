@@ -118,6 +118,10 @@ const readDisplayCutoutLines = async (): Promise<string[]> => {
             hasCutout?: boolean;
             safeInsets?: { left?: number; top?: number; right?: number; bottom?: number };
             boundingRects?: Array<{ left?: number; top?: number; right?: number; bottom?: number }>;
+            screenHeightDp?: number;
+            decorHeightPx?: number;
+            contentHeightPx?: number;
+            visibleFrame?: { left?: number; top?: number; right?: number; bottom?: number };
         } | null;
         if (!snapshot || snapshot.available === false) {
             return ['  (no decor view)'];
@@ -134,6 +138,13 @@ const readDisplayCutoutLines = async (): Promise<string[]> => {
             rects.length
                 ? `  bounding rects: ${rects.map(rect => `[${rect.left ?? 0},${rect.top ?? 0},${rect.right ?? 0},${rect.bottom ?? 0}]`).join(' ')}`
                 : '  bounding rects: (none)',
+            `  height: screen=${snapshot.screenHeightDp ?? 'n/a'}`
+                + ` decor=${snapshot.decorHeightPx ?? 'n/a'}`
+                + ` content=${snapshot.contentHeightPx ?? 'n/a'}`,
+            snapshot.visibleFrame
+                ? `  visible frame: [${snapshot.visibleFrame.left ?? 0},${snapshot.visibleFrame.top ?? 0},`
+                    + `${snapshot.visibleFrame.right ?? 0},${snapshot.visibleFrame.bottom ?? 0}]`
+                : '  visible frame: (unknown)',
         ];
     } catch (error) {
         return [`  cutout diagnostics unavailable: ${error instanceof Error ? error.message : String(error)}`];

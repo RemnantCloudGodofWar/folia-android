@@ -483,7 +483,8 @@ describe('qqProvider', () => {
         ['anonymous', 'login_status: the backend does not recognize the stored session'],
         ['auth-required', 'login_status failed: QQMusicApi login required'],
         ['network', 'login_status failed: QQMusicApi login_status failed: HTTP 502'],
-        ['signed-in', 'signed in (user id present, nickname present)'],
+        // 账号检查摘要里带上了头像状态：「名字 / 头像不显示」时报告能直接看出是哪一项缺。
+        ['signed-in', 'signed in (user id present, nickname present, avatar missing)'],
     ] as const)('records the account check result %s', async (outcome, expected) => {
         if (outcome === 'anonymous') requestMock.mockResolvedValueOnce({ code: 200, data: {} });
         else if (outcome === 'signed-in') requestMock.mockResolvedValueOnce({ code: 200, data: { profile: { musicid: 42, info: { nick: 'Lia' } } } });

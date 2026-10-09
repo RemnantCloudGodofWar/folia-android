@@ -140,6 +140,15 @@ function qqChannelOf(value) {
   return String(value || '').toLowerCase() === 'wechat' ? 'wechat' : 'qq';
 }
 
+/** 只回报主机名：头像 URL 里带着用户 hash，整条写进报告没有必要。 */
+function describeUrlHost(value) {
+  try {
+    return new URL(String(value)).host || 'empty';
+  } catch (_) {
+    return 'unparseable';
+  }
+}
+
 function qqProfile(status) {
   if (!status?.loggedIn) return null;
   return {
@@ -592,10 +601,23 @@ async function routeFoliaQqRequest(operation, params, segments, url, cookie) {
   }
   if (operation === 'login_status') {
     const status = await getQQLoginStatus(cookie);
+    const profile = qqProfile(status);
+    // 「用户名 / 头像不显示」时，报告里必须能直接看出是登录态没认出来，还是上游资料页没给这两个字段。
+    noteLibraryStep('qq', 'login-status:profile', {
+      loggedIn: Boolean(status?.loggedIn),
+      uinTail: status?.uin ? `…${String(status.uin).slice(-4)}` : 'missing',
+      nickname: profile?.nickname ? `present(len=${String(profile.nickname).length})` : 'missing',
+      avatar: profile?.logo ? describeUrlHost(profile.logo) : 'missing',
+      source: status?.profileSource || 'unknown',
+      profileUnavailable: Boolean(status?.profileUnavailable),
+      missing: status?.missing
+        ? Object.entries(status.missing).filter(([, absent]) => absent).map(([key]) => key).join(',') || 'none'
+        : undefined,
+    });
     return {
       code: 200,
       data: {
-        profile: qqProfile(status),
+        profile,
         account: status?.loggedIn ? { id: status.uin || status.userId || null } : null,
       },
     };

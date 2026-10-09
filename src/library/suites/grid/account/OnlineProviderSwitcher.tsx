@@ -39,8 +39,21 @@ const fallbackBadge = (provider: ProviderAccountSummary) => ({
 
 const ProviderAvatar = ({ provider, className }: { provider: ProviderAccountSummary; className: string }) => {
     const badge = AVATAR_BADGE_BY_PROVIDER[provider.providerId] ?? fallbackBadge(provider);
-    return provider.user?.avatarUrl
-        ? <img src={typeof window !== 'undefined' && window.electron ? provider.user.avatarUrl : provider.user.avatarUrl.replace(/^http:/, 'https:')} alt={provider.user.nickname} className={`${className} object-cover`} />
+    // 头像 URL 会失效（平台换域名、账号没有自定义头像），加载失败时不能留一个破图 ——
+    // 退回平台徽标，头像位始终有东西。
+    const [avatarFailed, setAvatarFailed] = useState(false);
+    const avatarUrl = provider.user?.avatarUrl;
+    // 换了头像地址（重新登录、切账号）要重新给一次机会，否则徽标会一直留着。
+    useEffect(() => { setAvatarFailed(false); }, [avatarUrl]);
+    return avatarUrl && !avatarFailed
+        ? (
+            <img
+                src={typeof window !== 'undefined' && window.electron ? avatarUrl : avatarUrl.replace(/^http:/, 'https:')}
+                alt={provider.user?.nickname || provider.displayName}
+                className={`${className} object-cover`}
+                onError={() => setAvatarFailed(true)}
+            />
+        )
         : (
             <span
                 aria-label={provider.displayName}

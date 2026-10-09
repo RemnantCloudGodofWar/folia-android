@@ -352,6 +352,51 @@ const noteLoginStatusCheck = (summary: string): void => {
     lastLoginStatusCheck = `${formatDiagnosticClock(Date.now())} ${summary}`;
 };
 
+// 账号展示信息（昵称 / 头像）来自上游的 profile 页，偶发失败时凭据还在、名字和头像却会一起消失。
+// 按账号 id 缓存上一次的结果，只在字段缺失时补齐：切账号不会串（键是 id），上游给了新值也不会被旧值覆盖。
+const QQ_PROFILE_CACHE_KEY = 'folia_qq_profile_cache';
+const QQ_PROFILE_CACHE_LIMIT = 8;
+
+type QqProfileCacheEntry = { nickname?: string; avatarUrl?: string; at?: number };
+
+const readQqProfileCache = (): Record<string, QqProfileCacheEntry> => {
+    try {
+        const raw = localStorage.getItem(QQ_PROFILE_CACHE_KEY);
+        if (!raw) return {};
+        const parsed = JSON.parse(raw) as unknown;
+        return parsed && typeof parsed === 'object' ? parsed as Record<string, QqProfileCacheEntry> : {};
+    } catch {
+        return {};
+    }
+};
+
+const cacheQqProfile = (user: ProviderUser): void => {
+    if (!user.id || (!user.nickname && !user.avatarUrl)) return;
+    try {
+        const cache = readQqProfileCache();
+        cache[String(user.id)] = {
+            ...(user.nickname ? { nickname: user.nickname } : {}),
+            ...(user.avatarUrl ? { avatarUrl: user.avatarUrl } : {}),
+            at: Date.now(),
+        };
+        const recent = Object.entries(cache)
+            .sort(([, a], [, b]) => (b.at ?? 0) - (a.at ?? 0))
+            .slice(0, QQ_PROFILE_CACHE_LIMIT);
+        localStorage.setItem(QQ_PROFILE_CACHE_KEY, JSON.stringify(Object.fromEntries(recent)));
+    } catch {
+        // 存不下就当没有缓存，不影响登录本身。
+    }
+};
+
+const withCachedQqProfile = (user: ProviderUser): ProviderUser => {
+    if (user.nickname && user.avatarUrl) return user;
+    const cached = user.id ? readQqProfileCache()[String(user.id)] : undefined;
+    if (!cached) return user;
+    const nickname = user.nickname || cached.nickname || '';
+    const avatarUrl = user.avatarUrl || cached.avatarUrl;
+    return { ...user, nickname, ...(avatarUrl ? { avatarUrl } : {}) };
+};
+
 const getLoginStatus = async (): Promise<ProviderUser | null> => {
     // No opaque backend session means the account cannot be authenticated, so the startup request is skipped.
     if (!hasQqSession()) {
@@ -367,14 +412,26 @@ const getLoginStatus = async (): Promise<ProviderUser | null> => {
             console.info('[QQProvider] login-status:anonymous');
             return null;
         }
-        const user = normalizeQqUser(profile);
+        const fetched = normalizeQqUser(profile);
+        const user = withCachedQqProfile(fetched);
+        // 上游资料页确实可能不给显示名（注释里那条验收账号就是）。缓存也补不上时至少给个可读标识，
+        // 否则账户卡片会空着一块 —— 这是「用户名不显示」最直接的原因。
+        const named = user.nickname || !user.id ? user : { ...user, nickname: `QQ ${user.id}` };
+        cacheQqProfile(named);
         // The acceptance test account returned a profile without a display name, so the profile itself is the signal.
-        noteLoginStatusCheck(`signed in (user id ${user.id ? 'present' : 'missing'}, nickname ${user.nickname ? 'present' : 'missing'})`);
+        noteLoginStatusCheck(
+            `signed in (user id ${named.id ? 'present' : 'missing'}, nickname ${named.nickname ? 'present' : 'missing'},`
+            + ` avatar ${named.avatarUrl ? 'present' : 'missing'})`,
+        );
         console.info('[QQProvider] login-status:profile', {
-            hasUserId: Boolean(user.id),
-            hasNickname: Boolean(user.nickname),
+            hasUserId: Boolean(named.id),
+            hasNickname: Boolean(named.nickname),
+            hasAvatar: Boolean(named.avatarUrl),
+            // 上游资料页没给名字/头像时能看出是「接口没给」还是「我们没解析出来」。
+            profileSource: profile?.profileSource ?? 'unknown',
+            profileUnavailable: Boolean(profile?.profileUnavailable),
         });
-        return user;
+        return named;
     } catch (error) {
         noteLoginStatusCheck(`login_status failed: ${errorFields(error).message}`);
         // Missing, expired, rejected, or non-persisted backend sessions all arrive as 401.

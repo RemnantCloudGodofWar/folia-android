@@ -93,7 +93,7 @@ function ticketExchangeFailure(qrsig, message, error, extra = {}) {
 const DNR_COOKIE_RULE_ID = 917027609;
 let dnrCookieSerial = 0;
 
-// 微信扫码通道写下的 cookie 名。QQ 登录前必须先清掉，否则会被误判成微信通道。
+// 微信扫码通道写下的通道标记。QQ 登录前必须先清掉，否则会被误判成微信通道。
 const WECHAT_COOKIE_HOSTS = ['https://y.qq.com/', 'https://qq.com/', 'https://graph.qq.com/'];
 export const WECHAT_CHANNEL_COOKIE_NAMES = [
   'login_type',
@@ -104,6 +104,42 @@ export const WECHAT_CHANNEL_COOKIE_NAMES = [
   'str_musicid',
   'tmeLoginType',
 ];
+
+// 平台账号凭据。两条扫码通道共用同一个 cookie 罐（都写在 .qq.com 上），所以「先微信、退出、再 QQ」
+// 时上一条会话的 uin / qm_keyst / qqmusic_key 还在罐里：换票过程会把它们当成自己的凭据捡回来，
+// 拼出一个「看起来登录了、其实用不了」的混合会话。开新会话前必须把整套凭据一起清掉。
+export const QQ_PLATFORM_CREDENTIAL_COOKIE_NAMES = [
+  'uin',
+  'p_uin',
+  'qqmusic_uin',
+  'qm_keyst',
+  'qqmusic_key',
+  'music_key',
+  'p_skey',
+  'skey',
+  'psrf_qqaccess_token',
+  'psrf_qqrefresh_token',
+  'psrf_qqunionid',
+  'euin',
+  ...WECHAT_CHANNEL_COOKIE_NAMES,
+];
+
+/** 这些名字只能由本次登录流程产生，绝不能从上一条会话的残留里捡回来。 */
+const SESSION_CREDENTIAL_NAMES = new Set(
+  QQ_PLATFORM_CREDENTIAL_COOKIE_NAMES.map(name => String(name).toLowerCase()),
+);
+
+// 跨通道会互相打架的账号 / 通道 cookie：从 jar 读回来时一律跳过，只认本次流程产出的值。
+// 不跳过就会出现「先微信、退出、再 QQ」时的混合会话：uin 是微信的、p_skey 是 QQ 的。
+const CROSS_CHANNEL_COOKIE_NAMES = new Set([
+  'uin',
+  'p_uin',
+  'qqmusic_uin',
+  'qm_keyst',
+  'qqmusic_key',
+  'music_key',
+  ...WECHAT_CHANNEL_COOKIE_NAMES,
+].map(name => String(name).toLowerCase()));
 
 // 收尾步骤的硬上限：宿主不回包时不能让登录停在「手机上已确认、应用没反应」。
 const COOKIE_HYGIENE_TIMEOUT_MS = 1200;
@@ -125,16 +161,16 @@ function settleWithin(promise, ms, fallback, label) {
 }
 
 /**
- * 清掉微信通道写下的 cookie。QQ 扫码开始前与登录成功时都调用一次。
- * 这只是通道切换的卫生工作：读不到结果也照常放行，绝不阻塞登录。
+ * 清掉上一条通道留下的平台凭据。扫码开始前、登出时、写新会话前都要走一遍。
+ * 这只是会话切换的卫生工作：读不到结果也照常放行，绝不阻塞登录。
  */
-async function clearWechatChannelCookies() {
+export async function clearQQPlatformSessionCookies() {
   const cleanup = (async () => {
     for (const host of WECHAT_COOKIE_HOSTS) {
-      await removeBrowserCookies(host, WECHAT_CHANNEL_COOKIE_NAMES);
+      await removeBrowserCookies(host, QQ_PLATFORM_CREDENTIAL_COOKIE_NAMES);
     }
   })();
-  await settleWithin(cleanup, COOKIE_HYGIENE_TIMEOUT_MS, undefined, 'qr:clean-wechat-cookies');
+  await settleWithin(cleanup, COOKIE_HYGIENE_TIMEOUT_MS, undefined, 'qr:clean-platform-cookies');
 }
 
 export function hash33(qrsig) {
@@ -245,10 +281,23 @@ function mergeCookieHeader(...headers) {
   return Array.from(merged, ([name, value]) => `${name}=${value}`).join('; ');
 }
 
+const cookiePairName = (pair) => {
+  const eq = String(pair).indexOf('=');
+  return eq <= 0 ? '' : String(pair).slice(0, eq).trim().toLowerCase();
+};
+
+/** 上一条通道留下的账号 cookie 不能带进本次请求。 */
+const isCrossChannelCookiePair = (pair) => CROSS_CHANNEL_COOKIE_NAMES.has(cookiePairName(pair));
+
+/** 会话凭据只能由本次流程产生：读 jar 时全部跳过。 */
+const isSessionCredentialPair = (pair) => SESSION_CREDENTIAL_NAMES.has(cookiePairName(pair));
+
 async function buildRequestCookieHeader(url, pairs) {
+  const jarPairs = (await readJarCookiePairs(url)).filter(pair => !isCrossChannelCookiePair(pair));
+  // 本次流程产出的 cookie 放最后：同名时以它为准，别让 jar 里的旧值把新值顶掉。
   return mergeCookieHeader(
+    cookiePairsToHeader(jarPairs),
     cookiePairsToHeader(pairs),
-    cookiePairsToHeader(await readJarCookiePairs(url)),
   );
 }
 
@@ -260,6 +309,11 @@ function mergeCookiePairs(map, pairs) {
     if (name) map.set(name, pair.trim());
   }
   return map;
+}
+
+/** 把 jar 读回来的 cookie 并进本次会话，但跳过所有会话凭据。 */
+function mergeJarCookiePairs(map, pairs) {
+  return mergeCookiePairs(map, (pairs || []).filter(pair => !isSessionCredentialPair(pair)));
 }
 
 export function buildLoginSession(cookie) {
@@ -332,7 +386,7 @@ async function writeSessionCookies(session) {
   if (!raw) return;
   // QQ 通道登录：先清掉上一条微信通道留下的通道标记。它们留在同一个 cookie jar 里时，
   // qqCookieUin 会优先读 wxuin、comm 会带上 tmeLoginType=1，QQ 凭证就被按微信解析而拒收。
-  await clearWechatChannelCookies();
+  await clearQQPlatformSessionCookies();
   noteQrLoginStep('qr:session:write:start', { cookieCount: raw.split(';').filter(Boolean).length });
   // 写 jar 失败不该吞掉刚拿到的会话：调用方还会把同一串 cookie 交给 saveProviderCookie 持久化，
   // getQQCookie() 会把存储里那份合并回来。超时同样只记一条诊断，不阻塞「已确认」的返回。
@@ -356,7 +410,7 @@ export async function qqGetLoginQr() {
   resetQrLoginTrace();
   noteQrLoginStep('qr:create:start');
   // 开始一次 QQ 扫码就把微信通道的残留清掉：它会让后续的 login_status / 歌单请求被按微信解析。
-  await clearWechatChannelCookies().catch(() => undefined);
+  await clearQQPlatformSessionCookies().catch(() => undefined);
   const u = new URL('https://ssl.ptlogin2.qq.com/ptqrshow');
   u.searchParams.set('appid', QQ_PT_APPID);
   u.searchParams.set('e', '2');
@@ -552,6 +606,15 @@ export async function qqCheckLoginQr(params = {}) {
     return ticketExchangeFailure(qrsig, '登录检查失败：未拿到 checkSigUrl', '提取不到 checkSigUrl');
   }
   const checkSigUrl = rawCheckSigUrl.replace(/[;,'"]+$/, '');
+  // check_sig 的查询串里带着本次真正登录的 uin。它是这次扫码的账号，可以放心当兜底；
+  // 上一条通道留在 jar 里的 uin 则一律不许进会话（否则拼出的是别人的账号）。
+  const checkSigUin = (() => {
+    try {
+      return (new URL(checkSigUrl).searchParams.get('uin') || '').replace(/\D/g, '');
+    } catch {
+      return '';
+    }
+  })();
 
   let checkSigRes;
   let checkSigFinalUrl = checkSigUrl;
@@ -635,7 +698,7 @@ export async function qqCheckLoginQr(params = {}) {
   // The jar may hold cookies the response headers do not expose (the native
   // bridge hides Set-Cookie from JS), so read it back for the final URL too.
   const checkSigJarPairs = await readJarCookiePairs(checkSigFinalUrl);
-  mergeCookiePairs(cookieMap, checkSigJarPairs);
+  mergeJarCookiePairs(cookieMap, checkSigJarPairs);
   noteQrLoginStep('qr:check-sig', {
     status: checkSigRes.status,
     setCookieCount: checkSigCookies.length,
@@ -754,7 +817,7 @@ export async function qqCheckLoginQr(params = {}) {
       );
       mergeCookiePairs(cookieMap, collectSetCookies(hopRes));
       const mergedHopJar = await readJarCookiePairs(nextUrl);
-      mergeCookiePairs(cookieMap, mergedHopJar);
+      mergeJarCookiePairs(cookieMap, mergedHopJar);
       authorizeRes = hopRes;
       location = hopRes.headers.get('Location') || hopRes.headers.get('location') || '';
       noteQrLoginStep('qr:authorize:hop:result', {
@@ -888,6 +951,13 @@ export async function qqCheckLoginQr(params = {}) {
       if (id) cookieMap.set('uin', `uin=o${id}`);
     }
   } catch (_) {}
+
+  // 会话必须有账号 id 和播放票据。账号 id 优先用本次扫码的 uin，缺了就从 check_sig 兜底，
+  // 不从 jar 里捡 —— jar 里可能还躺着上一条通道的账号。
+  if (!cookieMap.has('uin') && !cookieMap.has('p_uin') && checkSigUin) {
+    cookieMap.set('uin', `uin=o${checkSigUin}`);
+    noteQrLoginStep('qr:session:uin-from-check-sig', { uinTail: checkSigUin.slice(-4) });
+  }
 
   const session = buildLoginSession(cookiePairsToHeader(Array.from(cookieMap.values())));
   noteQrLoginStep('qr:session', {

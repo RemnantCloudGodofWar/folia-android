@@ -9,6 +9,13 @@ const PTUI_SUCCESS =
 
 const fetchMock = vi.fn();
 let checkSigCalls = 0;
+/** cookie 罐的桩：两条通道共用 .qq.com 上的同一批 cookie，跨通道污染就是从这里来的。 */
+let jarPairs: string[] = [];
+
+const cookieEntry = (pair: string) => {
+    const eq = pair.indexOf('=');
+    return { name: pair.slice(0, eq), value: pair.slice(eq + 1), url: 'https://y.qq.com/' };
+};
 
 const jsonResponse = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
     status,
@@ -49,10 +56,15 @@ const stubTicketExchange = ({ musickey }: { musickey?: string }) => {
 const stubBrowser = () => {
     vi.stubGlobal('chrome', {
         cookies: {
-            getAll: async () => [],
-            get: async () => null,
+            getAll: async () => jarPairs.map(cookieEntry),
+            get: async ({ name }: { name?: string } = {}) => (
+                jarPairs.map(cookieEntry).find(entry => entry.name === name) ?? null
+            ),
             set: async () => ({}),
-            remove: async () => ({}),
+            remove: async ({ name }: { name?: string } = {}) => {
+                jarPairs = jarPairs.filter(pair => !pair.startsWith(`${name}=`));
+                return {};
+            },
         },
         storage: { local: { get: async () => ({}), set: async () => undefined } },
     });
@@ -84,6 +96,7 @@ const checkOnce = async (): Promise<QrCheckResult> => {
 beforeEach(() => {
     vi.resetModules();
     checkSigCalls = 0;
+    jarPairs = [];
     fetchMock.mockReset();
     vi.stubGlobal('fetch', fetchMock);
     stubBrowser();
@@ -128,5 +141,79 @@ describe('QQ QR ticket exchange after a confirmed scan', () => {
         const failure = await checkOnce();
         expect(failure.status).toBe('wait');
         expect(failure.ticketExchangeAttempts).toBe(1);
+    });
+});
+
+// 复现路径：先微信扫码登录、退出、再 QQ 扫码。两条通道把 cookie 写在同一个 .qq.com 域上，
+// 退出登录过去只清前端会话，罐里还留着微信的 uin / qm_keyst —— 换票过程会把它们当成自己的凭据。
+const WECHAT_LEFTOVERS = [
+    'uin=o8888888888',
+    'qqmusic_uin=o8888888888',
+    'qm_keyst=wechat-stale-key',
+    'qqmusic_key=wechat-stale-key',
+    'login_type=2',
+    'tmeLoginType=1',
+    'str_musicid=8888888888',
+];
+
+const cookieHeaders = (): string => fetchMock.mock.calls
+    .map(([, init]) => (init as { headers?: Record<string, string> } | undefined)?.headers || {})
+    .map(headers => Object.entries(headers)
+        .filter(([name]) => name.toLowerCase() === 'cookie')
+        .map(([, value]) => String(value))
+        .join('; '))
+    .join(' | ');
+
+describe('QQ QR login after a WeChat session left cookies behind', () => {
+    it('never lets the previous channel credentials become the new session', async () => {
+        jarPairs = [...WECHAT_LEFTOVERS];
+        stubTicketExchange({});
+
+        const result = await checkOnce();
+
+        // 罐里那把旧的 musickey 绝不能被当成本次登录的票据：没有新票据就必须失败。
+        expect(result.isOk).toBeFalsy();
+        expect(result.status).not.toBe('ok');
+        const sessionCookie = String((result as { session?: { cookie?: string } }).session?.cookie || '');
+        expect(sessionCookie).not.toContain('wechat-stale-key');
+        expect(cookieHeaders()).not.toContain('qm_keyst=wechat-stale-key');
+        expect(cookieHeaders()).not.toContain('uin=o8888888888');
+    });
+
+    it('writes a clean session from the fresh exchange only', async () => {
+        const { bridge } = await loadBridge();
+        jarPairs = [...WECHAT_LEFTOVERS];
+        stubTicketExchange({ musickey: 'fresh-qq-key' });
+
+        const result = await bridge.qqCheckLoginQr({ qrsig: 'test-qrsig', ptqrtoken: '1' }) as unknown as {
+            isOk?: boolean;
+            session?: { cookie?: string };
+        };
+
+        expect(result.isOk).toBe(true);
+        expect(result.session?.cookie).toContain('qm_keyst=fresh-qq-key');
+        // 账号必须是本次扫码的那个，而不是罐里剩下的微信账号。
+        expect(result.session?.cookie).toContain('uin=o2774749');
+        expect(result.session?.cookie).not.toContain('o8888888888');
+        expect(result.session?.cookie).not.toContain('login_type=2');
+        expect(result.session?.cookie).not.toContain('tmeLoginType=1');
+    });
+
+    it('clears the whole platform credential set on logout', async () => {
+        jarPairs = [...WECHAT_LEFTOVERS, 'ptcz=transport-cookie'];
+        const { bridge } = await loadBridge();
+
+        await bridge.clearQQPlatformSessionCookies();
+
+        const names = jarPairs.map(pair => pair.slice(0, pair.indexOf('=')));
+        expect(names).not.toContain('uin');
+        expect(names).not.toContain('qqmusic_uin');
+        expect(names).not.toContain('qm_keyst');
+        expect(names).not.toContain('qqmusic_key');
+        expect(names).not.toContain('login_type');
+        expect(names).not.toContain('tmeLoginType');
+        expect(names).not.toContain('str_musicid');
+        // 传输类 cookie（ptcz / RK 这类）不该被清掉，否则会把正常的反爬指纹也一起弄丢。
+        expect(names).toContain('ptcz');
     });
 });

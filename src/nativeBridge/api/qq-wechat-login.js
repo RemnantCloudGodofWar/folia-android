@@ -13,7 +13,7 @@
 import { UA } from './weapi.js';
 import { clearCookieCache, setBrowserCookies } from './cookies.js';
 import { noteQrLoginStep, resetQrLoginTrace } from './qrLoginTrace.js';
-import { buildLoginSession, fetchWithTimeout } from './qq-login-qr.js';
+import { buildLoginSession, clearQQPlatformSessionCookies, fetchWithTimeout } from './qq-login-qr.js';
 
 const WECHAT_APP_ID = 'wx48db31d50e334801';
 const WECHAT_LOGIN_TYPE = 1;
@@ -70,6 +70,11 @@ async function readBytes(response) {
 
 /** 取微信 OAuth 二维码；返回 uuid 与内联图片。 */
 export async function qqWechatGetLoginQr() {
+  resetQrLoginTrace();
+  noteQrLoginStep('wx:qr:create:start');
+  // 换通道前先清掉上一条通道的平台凭据：QQ 扫码留下的 uin / qm_keyst 会在换票时被当成
+  // 自己的凭据捡回来，拼出一个用不了的混合会话。
+  await clearQQPlatformSessionCookies();
   const url = new URL(CONNECT_URL);
   url.searchParams.set('appid', WECHAT_APP_ID);
   url.searchParams.set('redirect_uri', REDIRECT_URI);
@@ -226,6 +231,9 @@ export async function qqWechatCheckLoginQr(params = {}) {
     ];
     if (accountId) cookiePairs.push(`str_musicid=${accountId}`);
     const sessionData = buildLoginSession(cookiePairs.join('; '));
+    // 写新会话前先把上一条通道（可能是 QQ 扫码）的平台凭据清干净：
+    // 两者共用 .qq.com 上的同一个 cookie 罐，残留会让会话里混进别人的 uin / musickey。
+    await clearQQPlatformSessionCookies();
     await setBrowserCookies('https://y.qq.com/', sessionData.cookie);
     await setBrowserCookies('https://qq.com/', sessionData.cookie);
     await setBrowserCookies('https://graph.qq.com/', sessionData.cookie);

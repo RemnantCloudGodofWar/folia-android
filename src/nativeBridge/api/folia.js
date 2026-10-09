@@ -38,6 +38,7 @@ import {
   qqWechatCheckLoginQr,
   qqWechatCancelLoginQr,
 } from './qq-wechat-login.js';
+import { clearQQPlatformSessionCookies } from './qq-login-qr.js';
 import {
   claimKGYouthDayVip,
   ensureKGCookie,
@@ -604,6 +605,9 @@ async function routeFoliaQqRequest(operation, params, segments, url, cookie) {
     return { code: 200, profile: qqProfile(status) };
   }
   if (operation === 'logout') {
+    // 登出必须连 cookie 罐里的平台凭据一起清掉：只清前端会话的话，
+    // 下一条通道登录（微信 → QQ 这种）会把旧凭据当成自己的拼出一个用不了的会话。
+    await clearQQPlatformSessionCookies();
     return { code: 200 };
   }
   if (operation === 'login_qr_key') {

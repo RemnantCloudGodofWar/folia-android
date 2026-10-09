@@ -93,6 +93,64 @@ const readNativePlaybackDiagnostics = async (): Promise<{
 };
 
 /**
+ * 手机厂商屏幕顶部（挖孔 / 刘海）的现场。
+ *
+ * 「顶部还有黑边」时最需要知道的就是系统到底报了什么：cutout mode 是否已经切成
+ * shortEdges、有没有识别到挖孔、安全区矩形是多少。全是设备侧只读信息，不含隐私。
+ */
+const readDisplayCutoutLines = async (): Promise<string[]> => {
+    if (typeof window === 'undefined') return ['  (no window)'];
+    const plugin = (window as unknown as {
+        Capacitor?: { getPlatform?: () => string; Plugins?: { FoliaNative?: { getDisplayCutout?: () => Promise<unknown> } } };
+    }).Capacitor;
+    if (plugin?.getPlatform?.() !== 'android') {
+        return ['  (not an android runtime)'];
+    }
+    const native = plugin?.Plugins?.FoliaNative;
+    if (typeof native?.getDisplayCutout !== 'function') {
+        return ['  (native cutout diagnostics unavailable)'];
+    }
+    try {
+        const snapshot = await native.getDisplayCutout() as {
+            available?: boolean;
+            sdk?: number;
+            layoutInDisplayCutoutMode?: number;
+            hasCutout?: boolean;
+            safeInsets?: { left?: number; top?: number; right?: number; bottom?: number };
+            boundingRects?: Array<{ left?: number; top?: number; right?: number; bottom?: number }>;
+        } | null;
+        if (!snapshot || snapshot.available === false) {
+            return ['  (no decor view)'];
+        }
+        const insets = snapshot.safeInsets;
+        const rects = Array.isArray(snapshot.boundingRects) ? snapshot.boundingRects : [];
+        return [
+            `  sdk: ${snapshot.sdk ?? 'unknown'}`,
+            `  layoutInDisplayCutoutMode: ${describeCutoutMode(snapshot.layoutInDisplayCutoutMode)}`,
+            `  hasCutout: ${snapshot.hasCutout ? 'yes' : 'no'}`,
+            insets
+                ? `  safe inset: left=${insets.left ?? 0} top=${insets.top ?? 0} right=${insets.right ?? 0} bottom=${insets.bottom ?? 0}`
+                : '  safe inset: (none)',
+            rects.length
+                ? `  bounding rects: ${rects.map(rect => `[${rect.left ?? 0},${rect.top ?? 0},${rect.right ?? 0},${rect.bottom ?? 0}]`).join(' ')}`
+                : '  bounding rects: (none)',
+        ];
+    } catch (error) {
+        return [`  cutout diagnostics unavailable: ${error instanceof Error ? error.message : String(error)}`];
+    }
+};
+
+/** Android 的 layoutInDisplayCutoutMode 常量值对应关系，读起来比裸数字直观。 */
+const describeCutoutMode = (mode: number | undefined): string => {
+    if (mode == null) return 'unknown';
+    if (mode === 0) return '0 (default)';
+    if (mode === 1) return '1 (shortEdges)';
+    if (mode === 2) return '2 (never)';
+    if (mode === 3) return '3 (always)';
+    return String(mode);
+};
+
+/**
  * 底部控制条的实际几何。
  *
  * 「控制条跑到画面中间」有两种完全不同的成因，光看设置值分不出来：
@@ -215,6 +273,10 @@ export const buildDiagnosticReport = async (): Promise<string> => {
         `platform: ${capacitor?.getPlatform?.() ?? 'web'}${capacitor?.isNativePlatform?.() ? ' (native)' : ''}`,
         `user agent: ${typeof navigator === 'undefined' ? '' : navigator.userAgent}`,
         `viewport: ${typeof window === 'undefined' ? '' : `${window.innerWidth}x${window.innerHeight} dpr=${window.devicePixelRatio}`}`,
+        '',
+        // 挖孔/刘海适配的现场：cutout mode、是否有挖孔、安全区矩形。
+        'display cutout:',
+        ...(await readDisplayCutoutLines()),
         '',
         'session storage:',
         `  qq session: ${readLocalStorageFlag('online_provider:qq:cookie')}`,

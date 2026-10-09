@@ -454,8 +454,8 @@ public class FoliaNativePlugin extends Plugin {
         if (activity != null) {
             activity.runOnUiThread(() -> {
                 PhoneLayoutOrientation.apply(activity);
-                // 手机适配开关同时决定是否绘制到挖孔区。
-                PhoneFitCutout.applyFromPreference(activity);
+                // 挖孔适配跟手机适配开关无关，这里只是顺手在开关变化时再铺一次。
+                PhoneFitCutout.apply(activity);
                 WebView webView = getBridge() == null ? null : getBridge().getWebView();
                 if (webView != null && AdaptiveLayout.isEnabled(getContext())) {
                     AdaptiveLayout.apply(activity, webView, true);
@@ -492,6 +492,15 @@ public class FoliaNativePlugin extends Plugin {
         JSObject result = new JSObject();
         result.put("enabled", AdaptiveLayout.isEnabled(getContext()));
         call.resolve(result);
+    }
+
+    @PluginMethod
+    public void getDisplayCutout(PluginCall call) {
+        try {
+            call.resolve(JSObject.fromJSONObject(PhoneFitCutout.describe(getActivity())));
+        } catch (Exception error) {
+            call.reject(error.getMessage(), error);
+        }
     }
 
     @ActivityCallback

@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { resetFrameTimingDiagnostics } from '@/utils/frameTimingDiagnostics';
 import { notePlaybackStreamInfo } from '@/utils/mediaDiagnostics';
-import { buildDiagnosticReport } from '@/utils/buildDiagnosticReport';
+import { buildDiagnosticReport, resolveStutterAttribution } from '@/utils/buildDiagnosticReport';
 
 afterEach(() => {
     vi.restoreAllMocks();
@@ -11,6 +11,24 @@ afterEach(() => {
 });
 
 describe('diagnostic report frame timing section', () => {
+
+    // 现场教训（0.7.15-android.64）：整体帧统计被大量平滑帧稀释成 smooth，但单帧阻塞 150ms、
+    // 脚本 198ms 出在 LatticeLyrics 的 rAF 回调里 —— 归因必须被这一次翻过来，不能报 clean。
+    it('flags a single heavy script frame even when the session overall looks smooth', () => {
+        const at = (input: Parameters<typeof resolveStutterAttribution>[0]) => resolveStutterAttribution(input);
+
+        expect(at({ renderHealth: 'smooth', loafHeavy: true, scriptHeavy: true, audioStalled: false }))
+            .toBe('app-script');
+        expect(at({ renderHealth: 'smooth', loafHeavy: true, scriptHeavy: false, audioStalled: false }))
+            .toBe('ui-thread-render');
+        expect(at({ renderHealth: 'heavy', loafHeavy: false, scriptHeavy: false, audioStalled: true }))
+            .toBe('device-throughput');
+        expect(at({ renderHealth: 'smooth', loafHeavy: false, scriptHeavy: false, audioStalled: false }))
+            .toBe('clean');
+        expect(at({ renderHealth: 'unknown', loafHeavy: false, scriptHeavy: false, audioStalled: false }))
+            .toBe('insufficient-samples');
+    });
+
     it('exports the frame timing evidence and its attribution', async () => {
         notePlaybackStreamInfo({
             provider: 'netease',

@@ -30,6 +30,15 @@ let initialization: Promise<unknown> = Promise.resolve();
 export const latticeLyricResolution = (devicePixelRatio: number) =>
     Math.min(2, Math.max(1, Number.isFinite(devicePixelRatio) && devicePixelRatio > 0 ? Math.ceil(devicePixelRatio) : 1));
 
+/**
+ * 卡顿治理：建行（逐字素测量 + 排版）与建片（建 canvas → fillText → 建 Pixi 纹理 → 上传）
+ * 都在 rAF 回调里同步执行。一行长歌词或刚打开卡片时几十个片同时进入视野，一帧内全做完就是
+ * 几百毫秒的阻塞（现场 LoAF：FrameRequestCallback 脚本 198ms / 阻塞 150ms / 样式布局 0ms）。
+ * 按预算分摊到后续帧：当前行优先，相邻行与剩下的片下一帧补上，视觉上只是晚一两帧出现。
+ */
+export const LATTICE_NEW_LINES_PER_FRAME = 1;
+export const LATTICE_NEW_PIECES_PER_FRAME = 3;
+
 // Passing boolean `true` makes Pixi release module-global pools shared with the Player renderer.
 const destroyApplication = (app: import('pixi.js').Application) => {
     app.destroy({ removeView: true }, { children: true });
@@ -72,15 +81,24 @@ function attachRuntime(pixi: typeof import('pixi.js'), app: import('pixi.js').Ap
     host.appendChild(app.canvas); app.canvas.setAttribute('aria-hidden', 'true');
     let timeline = createLatticeTimeline(input.lines), lastTime = input.currentTime.get();
     let lastEntries: MonetVisibleLineEntry[] | null = null;
+    // 上一帧还有行/片没建完时保持为 true：帧循环据此继续唤醒，直到补完。
+    let pendingRefresh = false;
     const tracks = new Map<string, Track>();
-    const clear = () => { tracks.forEach(track => track.view.destroy()); tracks.clear(); lastEntries = null; };
-    const refreshEntries = (entries: MonetVisibleLineEntry[]) => {
+    const clear = () => { tracks.forEach(track => track.view.destroy()); tracks.clear(); lastEntries = null; pendingRefresh = false; };
+    const refreshEntries = (entries: MonetVisibleLineEntry[], budget: { lines: number }): boolean => {
         for (const track of tracks.values()) {
             track.leaving = true; track.fromAlpha = track.alpha; track.fromBlur = track.blur; track.elapsed = 0;
         }
-        for (const entry of entries) {
+        // 当前行（offset 0）先建：它是用户此刻在读的那一行，相邻行可以晚一两帧。
+        const ordered = entries.length > 1
+            ? [...entries].sort((a, b) => Math.abs(a.offset) - Math.abs(b.offset))
+            : entries;
+        let pending = false;
+        for (const entry of ordered) {
             let track = tracks.get(entry.key);
             if (!track) {
+                if (budget.lines <= 0) { pending = true; continue; }
+                budget.lines -= 1;
                 // Lattice draws the translation row inside its own lyric scene, not the shared bottom subtitle, so it
                 // cannot stack two rows yet: the 'both' option falls back to translation only (phase 2 will add a track).
                 const layout = layoutLatticeLine(entry.line, typography, Math.max(1, width - typography.padding * 2), raster.measure,
@@ -94,6 +112,7 @@ function attachRuntime(pixi: typeof import('pixi.js'), app: import('pixi.js').Ap
         }
         // Rapid seeks must not accumulate fading copies of every visited line.
         for (const [key, track] of tracks) if (track.leaving && tracks.size > 5) { track.view.destroy(); tracks.delete(key); }
+        return pending;
     };
     const draw = (delta: number) => {
         try {
@@ -102,7 +121,10 @@ function attachRuntime(pixi: typeof import('pixi.js'), app: import('pixi.js').Ap
             if (time < lastTime || Math.abs(time - lastTime) > 0.75) clear();
             lastTime = time;
             const entries = timeline(time);
-            if (entries !== lastEntries) { refreshEntries(entries); lastEntries = entries; }
+            if (entries !== lastEntries) { lastEntries = entries; pendingRefresh = true; }
+            if (pendingRefresh) pendingRefresh = refreshEntries(entries, { lines: LATTICE_NEW_LINES_PER_FRAME });
+            const pieceBudget = { remaining: LATTICE_NEW_PIECES_PER_FRAME };
+            let piecesPending = false;
             const anchor = entries.find(e => e.offset === 0);
             const anchorTrack = anchor ? tracks.get(anchor.key) : undefined;
             const room = Math.max(typography.lineHeight, height - typography.padding * 2);
@@ -135,10 +157,12 @@ function attachRuntime(pixi: typeof import('pixi.js'), app: import('pixi.js').Ap
                 track.view.container.zIndex = track.status === 'active' ? 4 : track.status === 'waiting' ? 2 : 1;
                 track.view.blur.strength = quiet ? 0 : track.blur;
                 track.view.blur.enabled = !quiet && track.blur > 0.05;
-                track.view.update(time, track.status, tone.baseAlpha, height, track.y, track.scale, quiet);
+                piecesPending ||= track.view.update(
+                    time, track.status, tone.baseAlpha, height, track.y, track.scale, quiet, pieceBudget,
+                );
             }
             app.render();
-            return moving;
+            return moving || pendingRefresh || piecesPending;
         } catch (error) { reportError(error); return false; }
     };
     const loop = createLatticeLyricFrameLoop(draw);

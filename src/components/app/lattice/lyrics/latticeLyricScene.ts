@@ -50,9 +50,10 @@ export function createLatticeLineView(pixi: Pixi, raster: LatticeRaster, parent:
         return { ...image, sprite, glow, sweep, piece, color, base };
     };
     const update = (time: number, status: MonetVisibleLineEntry['status'], baseAlpha: number, viewportHeight: number,
-        top: number, scale: number, quiet: boolean) => {
+        top: number, scale: number, quiet: boolean, budget?: { remaining: number }): boolean => {
         const maxText = status === 'active' ? Infinity : type.lineHeight * 2;
         let glowing = false;
+        let pending = false;
         for (let i = 0; i < layout.pieces.length; i++) {
             const piece = layout.pieces[i];
             const y = piece.translation && status !== 'active' ? Math.min(layout.textHeight, maxText) + type.fontPx * 0.3 + piece.row * type.translationLineHeight : piece.y;
@@ -60,7 +61,16 @@ export function createLatticeLineView(pixi: Pixi, raster: LatticeRaster, parent:
                 && (top + y * scale < viewportHeight + type.lineHeight * 2);
             const old = pieces.get(i);
             if (!visible) { if (old) { destroyPiece(old); pieces.delete(i); } continue; }
-            const view = old ?? createPiece(piece); pieces.set(i, view);
+            let view = old;
+            if (!view) {
+                // 建片 = 建 canvas + fillText + 建 Pixi 纹理 + 上传，全是同步重活：一行长歌词、
+                // 或刚打开页面时几十个片同时进入视野，一帧内全做完就是几百毫秒的卡顿
+                // （现场 LoAF：FrameRequestCallback 里脚本 198ms）。按预算摊到后续帧再做。
+                if (budget && budget.remaining <= 0) { pending = true; continue; }
+                if (budget) budget.remaining -= 1;
+                view = createPiece(piece);
+                pieces.set(i, view);
+            }
             view.sprite.y = y - view.pad; view.glow.forEach(sprite => { sprite.y = view.sprite.y; });
             const token = piece.token, start = token.startTime ?? Infinity, end = token.endTime ?? Infinity;
             const passed = token.timed && (status === 'passed' || (status === 'active' && time > end));
@@ -92,6 +102,7 @@ export function createLatticeLineView(pixi: Pixi, raster: LatticeRaster, parent:
             }
         }
         near.renderable = far.renderable = glowing;
+        return pending;
     };
     return { container, blur, layout, entry, update,
         // quad.destroy(true) 连顶点 / 索引缓冲一起删；不传 true 时 Geometry 不动缓冲，要等 Pixi 的 GC 空闲 60 秒才删。

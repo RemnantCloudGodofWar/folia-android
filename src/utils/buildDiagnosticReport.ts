@@ -107,6 +107,28 @@ const readPlaybackContinuityLines = (): string[] => {
 
 /**
  * 帧耗时与卡顿归属。用户报「卡顿」时先看这一段：
+ * 单帧阻塞 100ms 以上（loafHeavy）即使整体统计看着平滑，也算我们这边的卡 —— 现场那次
+ * 150ms 阻塞（脚本 198ms、样式布局 0ms、出处在 LatticeLyrics 的 rAF 回调）就是这么被抓到的。
+ */
+export type StutterAttributionInput = {
+    renderHealth: 'smooth' | 'mild' | 'heavy' | 'unknown';
+    loafHeavy: boolean;
+    scriptHeavy: boolean;
+    audioStalled: boolean;
+};
+
+/** 卡顿归因（纯函数，便于回归）。 */
+export const resolveStutterAttribution = (input: StutterAttributionInput): string => {
+    const renderHeavy = input.renderHealth === 'heavy';
+    if (input.renderHealth === 'unknown' && !input.loafHeavy) return 'insufficient-samples';
+    if ((renderHeavy || input.loafHeavy) && input.scriptHeavy) return 'app-script';
+    if (renderHeavy && input.audioStalled) return 'device-throughput';
+    if (renderHeavy || input.loafHeavy) return 'ui-thread-render';
+    if (input.audioStalled) return 'audio-pipeline';
+    return 'clean';
+};
+
+/**
  * 帧间隔分位数说明界面掉不掉帧，longtask 说明是不是我们自己的脚本占住主线程，
  * 核数 / 内存 / 处理器探针说明设备本身够不够用。三条凑在一起才能分清
  * 「我们的渲染开销」和「用户处理器性能不足」。
@@ -128,6 +150,8 @@ const readFrameTimingLines = (): string[] => {
         || continuity.errorCount > 0;
     const bufferLow = continuity.bufferedAheadSec !== null && continuity.bufferedAheadSec < 5;
     const loaf = frames.longAnimationFrames;
+    // 单帧阻塞 100ms 以上用户一定看得见，即使整体帧统计被大量平滑帧稀释成 smooth，也要按它定性。
+    const loafHeavy = loaf.worstBlockingMs >= 100;
     // 我们的脚本占住主线程，和 GPU/合成器跟不上（设备渲染能力）是两种不同的卡顿。
     // 有 LoAF 数据时用「脚本 vs 样式/布局」的实际占比判断，比只看长任务条数可靠得多；
     // 没有 LoAF 的旧内核退回长任务启发式。
@@ -135,12 +159,12 @@ const readFrameTimingLines = (): string[] => {
         ? loaf.scriptMs >= loaf.styleLayoutMs && loaf.scriptMs >= 30
         : (frames.longTasks.count >= 3 || frames.longTasks.maxMs >= 200);
     const renderHeavy = frames.renderHealth === 'heavy';
-    let attribution = 'clean';
-    if (frames.renderHealth === 'unknown') attribution = 'insufficient-samples';
-    else if (renderHeavy && scriptHeavy) attribution = 'app-script';
-    else if (renderHeavy && audioStalled) attribution = 'device-throughput';
-    else if (renderHeavy) attribution = 'ui-thread-render';
-    else if (audioStalled) attribution = 'audio-pipeline';
+    const attribution = resolveStutterAttribution({
+        renderHealth: frames.renderHealth,
+        loafHeavy,
+        scriptHeavy,
+        audioStalled,
+    });
 
     return [
         `  sampler: installed=${frames.installed ? 'yes' : 'no'} visible=${(frames.visibleMs / 1000).toFixed(1)}s`
@@ -177,7 +201,10 @@ const readFrameTimingLines = (): string[] => {
             + ` worst=${formatMilliseconds(loaf.worstBlockingMs)}`
             + ` (script ${formatMilliseconds(loaf.worstScriptMs)}`
             + ` + style/layout ${formatMilliseconds(loaf.worstStyleLayoutMs)}`
-            + ` @${loaf.worstInvoker || 'unknown'})`,
+            + ` @${loaf.worstInvoker || 'unknown'}`
+            + `${loaf.worstAtMs !== null && frames.installedAtMs !== null
+                ? ` worst@+${((loaf.worstAtMs - frames.installedAtMs) / 1000).toFixed(1)}s`
+                : ''})`,
         `  cpu probe: ${(cpu.ops / 1e6).toFixed(1)}M ops in ${cpu.durationMs.toFixed(0)}ms`
             + ` index=${cpu.index} (${(cpu.opsPerSecond / 1e6).toFixed(1)}M ops/s, 跨设备相对值)`,
         `  playback while sampling: state=${String(playback.playerState)}`

@@ -58,6 +58,8 @@ export type LongAnimationFrameStats = {
     worstScriptMs: number;
     worstStyleLayoutMs: number;
     worstInvoker: string;
+    /** 最重那一帧的开始时刻（performance.now 原点），用来和用户的操作对上号。 */
+    worstAtMs: number | null;
 };
 
 /** 移动中（滚动 / 触摸拖动）的帧统计：和整体统计分开看，才分得清「日常播放卡」还是「一动就卡」。 */
@@ -86,6 +88,7 @@ export type CpuProbeResult = {
 
 export type FrameTimingSnapshot = {
     installed: boolean;
+    installedAtMs: number | null;
     visibleMs: number;
     hiddenMs: number;
     frameCount: number;
@@ -127,6 +130,7 @@ const emptyLongAnimationFrames = (): LongAnimationFrameStats => ({
     worstScriptMs: 0,
     worstStyleLayoutMs: 0,
     worstInvoker: '',
+    worstAtMs: null,
 });
 
 /** 只留文件名：绝对路径不进报告。 */
@@ -189,6 +193,7 @@ let motionUntilMs = 0;
 let motionListener: (() => void) | null = null;
 
 let installed = false;
+let installedAtMs: number | null = null;
 let frameLoopHandle: number | null = null;
 let visibilityListener: (() => void) | null = null;
 let lastFrameAt: number | null = null;
@@ -543,6 +548,7 @@ const installLongAnimationFrameObserver = (): void => {
                         worstScriptMs: summary.scriptMs,
                         worstStyleLayoutMs: summary.styleLayoutMs,
                         worstInvoker: summary.invoker || 'unknown',
+                        worstAtMs: entry.startTime,
                     };
                 }
             });
@@ -557,6 +563,7 @@ export const installFrameTimingDiagnostics = (): void => {
     if (installed) return;
     if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') return;
     installed = true;
+    installedAtMs = nowMs();
     installLongTaskObserver();
     installLongAnimationFrameObserver();
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') hiddenSinceMs = nowMs();
@@ -592,6 +599,7 @@ export const resetFrameTimingDiagnostics = (): void => {
     motionJankCount = 0;
     motionFreezeCount = 0;
     motionUntilMs = 0;
+    installedAtMs = null;
     lastFrameAt = null;
     lastTickAtMs = null;
     hiddenSinceMs = null;
@@ -624,6 +632,7 @@ export const readFrameTimingSnapshot = (): FrameTimingSnapshot => {
     const memoryGb = typeof rawMemory === 'number' && Number.isFinite(rawMemory) ? rawMemory : null;
     return {
         installed,
+        installedAtMs,
         visibleMs,
         hiddenMs,
         frameCount,

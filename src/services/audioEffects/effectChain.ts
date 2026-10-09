@@ -1,5 +1,6 @@
 import {
     DEFAULT_AUDIO_EFFECT_SETTINGS,
+    isNeutralAudioEffects,
     normalizeAudioEffects,
     type AudioEffectSettings,
 } from '../../utils/audioEffects';
@@ -74,7 +75,7 @@ export const createAudioEffectChain = ({
     // Maps normalized settings onto every stage; a disabled chain falls back to the neutral set.
     const apply = (nextEffects: AudioEffectSettings, nextEnabled: boolean) => {
         const active = nextEnabled ? normalizeAudioEffects(nextEffects) : DEFAULT_AUDIO_EFFECT_SETTINGS;
-        setBypassed(!nextEnabled);
+        setBypassed(!nextEnabled || isNeutralAudioEffects(active));
 
         rampParam(context, nodes.highpass.frequency, active.highpass);
         rampParam(context, nodes.lowpass.frequency, Math.min(active.lowpass, context.sampleRate * 0.475));

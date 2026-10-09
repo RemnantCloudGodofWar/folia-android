@@ -7,6 +7,7 @@ import { readPlaybackContinuitySnapshot } from './mediaDiagnostics';
 import { readFrameTimingSnapshot, runCpuProbe } from './frameTimingDiagnostics';
 import { readLastAiThemeAttempt, readAiThemeAttempts, readFailedAiThemeAttempts } from './aiThemeDiagnostics';
 import { isAiConfigured, readAiSettings } from '../services/aiSettings';
+import { isNeutralAudioEffects } from './audioEffects';
 
 // src/utils/buildDiagnosticReport.ts
 // 设置 → 帮助 → 复制诊断数据。给用户原样贴进 issue 用，所以字段固定为英文并包在代码块里。
@@ -100,9 +101,11 @@ const readPlaybackContinuityLines = (): string[] => {
             + ` outputLatency=${formatSeconds(continuity.audioContextOutputLatencySec)}`,
         `  output settings: quality=${audioSettings.audioQuality} replayGain=${playback.replayGainMode}`
             + ` fade=${audioSettings.playbackFadeEnabled ? 'on' : 'off'}`,
-        `  effects: enabled=${equalizer.enabled ? 'yes' : 'no'} path=${equalizer.enabled ? 'processed' : 'bypassed'}`
-            + ` noise=${effects.noise} crush=${effects.crush}`
-            + ` drive=${effects.drive} wow=${effects.wow} punch=${effects.punch}`,
+        `  effects: enabled=${equalizer.enabled ? 'yes' : 'no'}`
+            + ` path=${equalizer.enabled && !isNeutralAudioEffects(effects) ? 'processed' : 'bypassed'}`
+            + ` highpass=${effects.highpass} lowpass=${effects.lowpass}`
+            + ` drive=${effects.drive} crush=${effects.crush} wow=${effects.wow}`
+            + ` noise=${effects.noise} width=${effects.width} space=${effects.space} punch=${effects.punch}`,
     ];
 };
 

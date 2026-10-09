@@ -83,11 +83,13 @@ const createChain = (effects = createNeutralAudioEffects(), enabled = true) => {
 
 describe('audio effect chain', () => {
     it('leaves the optional branches unallocated for a neutral chain', () => {
-        const { created } = createChain();
+        const { created, input, output } = createChain();
 
         expect(created.convolvers).toHaveLength(0);
         expect(created.bufferSources).toHaveLength(0);
         expect(created.oscillators).toHaveLength(0);
+        expect(input.connect).toHaveBeenCalledWith(output);
+        expect(input.disconnect).toHaveBeenCalled();
     });
 
     it('allocates reverb, noise and modulation only once the preset asks for them', () => {

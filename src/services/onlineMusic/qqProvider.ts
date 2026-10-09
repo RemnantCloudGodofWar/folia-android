@@ -20,6 +20,7 @@ import { clearQqSession, getQqRemoteApiBase, getQqTransportAvailability, hasQqSe
 import { collectLoginBackendDiagnostics } from './loginBackendDiagnostics';
 import { canRunLoginSelfCheck, runLoginSelfCheck } from './loginSelfCheck';
 import { formatDiagnosticClock } from '../../utils/qrLoginDiagnosticReport';
+import { getQrLoginTraceLines } from '../../nativeBridge/api/qrLoginTrace.js';
 
 // src/services/onlineMusic/qqProvider.ts
 
@@ -791,11 +792,16 @@ export const qqProvider: OnlineMusicProvider = {
         },
         checkQr,
         async getQrLoginDiagnostics() {
-            return collectLoginBackendDiagnostics('qq', [
+            const sessionLines = [
                 `session: backend session stored=${hasQqSession() ? 'yes' : 'no'}`,
                 `login channels: ${declaredChannels ? declaredChannels.join(', ') : 'not declared by the backend'}`,
                 `last account check: ${lastLoginStatusCheck ?? 'none'}`,
-            ], getQqRemoteApiBase());
+            ];
+            // 内置桥（安卓）在同一条链路里跑，「扫码成功却没反应」只有桥侧的分步追踪说得清：
+            // 走到哪一步、上游回了什么、换票重试了几次。桌面版这条追踪在扩展侧，这里为空。
+            const bridgeTrace = getQrLoginTraceLines('qq');
+            if (bridgeTrace.length) sessionLines.push(...bridgeTrace);
+            return collectLoginBackendDiagnostics('qq', sessionLines, getQqRemoteApiBase());
         },
         canRunQrLoginSelfCheck: () => canRunLoginSelfCheck(getQqRemoteApiBase()),
         runQrLoginSelfCheck: () => runLoginSelfCheck('qq', getQqRemoteApiBase()),

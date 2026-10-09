@@ -50,6 +50,29 @@ export async function handleQQLoginQrCheck(qrsig, ptqrtoken) {
       }
     } catch (_) {}
   }
+  // 换票被判定失败前再确认一次登录态：手机上已经确认、cookie 罐里也有有效会话时，
+  // 不该因为一次换票失败把用户挡在门外。
+  if (result && result.retryable === false && result.status === 'error') {
+    try {
+      clearCookieCache();
+      const cookieHeader = await getQQCookie();
+      const status = await getQQLoginStatus(cookieHeader);
+      if (status && status.loggedIn) {
+        noteQQLibraryStep('qr:exchange:recovered', { hasUserId: Boolean(status.uin || status.userId) });
+        return {
+          ...result,
+          ...status,
+          isOk: true,
+          code: 0,
+          status: 'ok',
+          message: '登录成功',
+          loggedIn: true,
+          hasCookie: true,
+          retryable: true,
+        };
+      }
+    } catch (_) {}
+  }
   return result;
 }
 

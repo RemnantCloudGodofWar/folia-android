@@ -641,6 +641,17 @@ async function routeFoliaQqRequest(operation, params, segments, url, cookie) {
     if (result?.status === 'scanned' || Number(result?.code) === 67 || Number(result?.code) === 802) {
       return { code: 802, message: result.message || 'Scanned' };
     }
+    // 上游已经确认、换票却连续失败：这是终态错误，不能再当成「等待扫码」吞掉 ——
+    // 否则界面会一直转圈，而手机上早就提示登录成功了。
+    if (result?.retryable === false && result?.status === 'error') {
+      return {
+        code: 0,
+        message: result.message || '登录失败',
+        failureStage: result.failureStage,
+        failureReason: result.failureReason,
+        ticketExchangeAttempts: result.ticketExchangeAttempts,
+      };
+    }
     return { code: 801, message: result?.message || 'Waiting for scan' };
   }
   if (operation === 'login_qr_cancel') {

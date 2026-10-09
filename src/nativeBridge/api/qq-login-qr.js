@@ -38,6 +38,58 @@ const retryableCheckFailure = (message, error, extra = {}) => ({
   ...extra,
 });
 
+// 扫过码之后换票失败，最多容忍几次：这个阶段上游已经确认过登录，一次网络抖动不该把会话丢掉。
+// 但连续失败必须转成终态错误 —— 只回 801 会让界面永远停在「等待扫码」，
+// 手机早就提示登录成功、应用却毫无反应，正是这么来的。
+const TICKET_EXCHANGE_MAX_FAILURES = 3;
+const TICKET_EXCHANGE_TRACKED_SESSIONS = 32;
+const ticketExchangeFailures = new Map();
+
+function countTicketExchangeFailure(qrsig) {
+  const key = String(qrsig || '').slice(0, 64);
+  const attempts = (ticketExchangeFailures.get(key) || 0) + 1;
+  ticketExchangeFailures.delete(key);
+  ticketExchangeFailures.set(key, attempts);
+  while (ticketExchangeFailures.size > TICKET_EXCHANGE_TRACKED_SESSIONS) {
+    ticketExchangeFailures.delete(ticketExchangeFailures.keys().next().value);
+  }
+  return attempts;
+}
+
+function clearTicketExchangeFailures(qrsig) {
+  ticketExchangeFailures.delete(String(qrsig || '').slice(0, 64));
+}
+
+/**
+ * 换票阶段的失败。前几次仍按「等待」返回让前端继续轮询，连续失败到上限就交出终态错误，
+ * 前端据此弹出可操作的失败界面（附带阶段与原因），而不是一直转圈。
+ */
+function ticketExchangeFailure(qrsig, message, error, extra = {}) {
+  const attempts = countTicketExchangeFailure(qrsig);
+  const detail = {
+    ...extra,
+    failureStage: 'qq-ticket-exchange',
+    failureReason: extra.failureReason || message,
+    ticketExchangeAttempts: attempts,
+  };
+  if (attempts <= TICKET_EXCHANGE_MAX_FAILURES) {
+    noteQrLoginStep('qr:exchange:retry', { attempts, message });
+    return { ...retryableCheckFailure(message, error, detail), status: 'wait' };
+  }
+  noteQrLoginStep('qr:exchange:failed', { attempts, message });
+  return {
+    isOk: false,
+    code: 0,
+    refresh: false,
+    message,
+    error,
+    provider: 'qq',
+    status: 'error',
+    retryable: false,
+    ...detail,
+  };
+}
+
 const DNR_COOKIE_RULE_ID = 917027609;
 let dnrCookieSerial = 0;
 
@@ -497,7 +549,7 @@ export async function qqCheckLoginQr(params = {}) {
     : (bareUrlMatch && bareUrlMatch[0]) || '';
   if (!rawCheckSigUrl) {
     noteQrLoginStep('qr:check-sig:missing-url', { body: responseHead });
-    return retryableCheckFailure('登录检查失败：未拿到 checkSigUrl', '提取不到 checkSigUrl');
+    return ticketExchangeFailure(qrsig, '登录检查失败：未拿到 checkSigUrl', '提取不到 checkSigUrl');
   }
   const checkSigUrl = rawCheckSigUrl.replace(/[;,'"]+$/, '');
 
@@ -540,6 +592,10 @@ export async function qqCheckLoginQr(params = {}) {
             }
           })(),
         });
+        // 302 那一跳的 Set-Cookie 必须在这里就收下：p_skey 通常写在它身上，而跟随后的响应
+        // 往往不再带 —— 只靠原生 cookie 罐回读，跨域或罐没存上时就会「缺少 p_skey」，
+        // 于是扫码成功却一直停在等待（手机早已提示登录成功）。
+        mergeCookiePairs(cookieMap, collectSetCookies(checkSigRes));
         try {
           const followCookieHeader = await buildRequestCookieHeader(
             resolvedTarget,
@@ -567,7 +623,8 @@ export async function qqCheckLoginQr(params = {}) {
     }
   } catch (err) {
     noteQrLoginStep('qr:check-sig:exception', { message: err?.message || String(err) });
-    return retryableCheckFailure(
+    return ticketExchangeFailure(
+      qrsig,
       (err && err.message) || '登录检查失败',
       'check_sig 请求失败',
     );
@@ -591,7 +648,7 @@ export async function qqCheckLoginQr(params = {}) {
     || (jarPSkey ? [null, jarPSkey] : null);
   if (!pSkeyMatch || !pSkeyMatch[1]) {
     noteQrLoginStep('qr:check-sig:no-p-skey', { cookieCount: checkSigCookies.length });
-    return retryableCheckFailure('登录检查失败：缺少 p_skey', '提取不到 p_skey');
+    return ticketExchangeFailure(qrsig, '登录检查失败：缺少 p_skey', '提取不到 p_skey');
   }
   const pSkey = pSkeyMatch[1];
   const gtk = getGtk(pSkey);
@@ -644,7 +701,8 @@ export async function qqCheckLoginQr(params = {}) {
     );
   } catch (err) {
     noteQrLoginStep('qr:authorize:exception', { message: err?.message || String(err) });
-    return retryableCheckFailure(
+    return ticketExchangeFailure(
+      qrsig,
       (err && err.message) || '授权请求失败',
       '授权响应异常',
     );
@@ -754,7 +812,8 @@ export async function qqCheckLoginQr(params = {}) {
     noteQrLoginStep('qr:authorize:body', { body: authorizeBodyHead });
   }
   if (!authorizeOk) {
-    return retryableCheckFailure(
+    return ticketExchangeFailure(
+      qrsig,
       '授权响应异常，未返回跳转地址',
       '授权响应异常，未返回跳转地址',
       { authorizeStatus: authorizeRes.status },
@@ -762,7 +821,8 @@ export async function qqCheckLoginQr(params = {}) {
   }
   const codeMatch = String(location).match(/[?&]code=([^&]+)/);
   if (!codeMatch || !codeMatch[1]) {
-    return retryableCheckFailure(
+    return ticketExchangeFailure(
+      qrsig,
       '授权跳转缺少 code',
       '授权跳转缺少 code',
       { location: String(location).slice(0, 200) },
@@ -808,7 +868,8 @@ export async function qqCheckLoginQr(params = {}) {
     );
   } catch (err) {
     noteQrLoginStep('qr:musicu:exception', { message: err?.message || String(err) });
-    return retryableCheckFailure(
+    return ticketExchangeFailure(
+      qrsig,
       (err && err.message) || 'QQLogin 失败',
       'QQLogin 失败',
     );
@@ -835,7 +896,8 @@ export async function qqCheckLoginQr(params = {}) {
     cookieCount: session.cookieList.length,
   });
   if (!session.cookieObject.qm_keyst && !session.cookieObject.qqmusic_key) {
-    return retryableCheckFailure(
+    return ticketExchangeFailure(
+      qrsig,
       '登录成功但未拿到 qm_keyst',
       '登录成功但未拿到 qm_keyst',
       { session },
@@ -843,6 +905,7 @@ export async function qqCheckLoginQr(params = {}) {
   }
 
   await writeSessionCookies(session);
+  clearTicketExchangeFailures(qrsig);
   noteQrLoginStep('qr:done:ok');
 
   return {

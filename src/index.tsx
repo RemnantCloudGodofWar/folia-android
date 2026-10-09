@@ -4,6 +4,7 @@ import { installConsoleLogCapture } from './utils/consoleLogBuffer';
 import { installCrashDiagnostics } from './utils/crashDiagnostics';
 import { installDebugModule } from './services/debug/debugModule';
 import { installMemorySampleFeed } from './services/debug/memorySamples';
+import { installFrameTimingDiagnostics } from './utils/frameTimingDiagnostics';
 import { installNativeAndroidBridge } from './services/nativeAndroidBridge';
 import { installAndroidPhoneFitPreference } from './services/androidPhoneLayout';
 // import { installCoverSizeAudit } from './services/debug/coverSizeSamples';
@@ -17,6 +18,8 @@ installCrashDiagnostics();
 // buffer. Both no-op off Electron. See services/debug/debugModule.ts.
 installDebugModule();
 installMemorySampleFeed();
+// 帧耗时 / 长任务采样，供设置里的「复制诊断数据」判断卡顿是渲染开销还是设备性能。
+installFrameTimingDiagnostics();
 // Cover size audit, left wired but switched off: it answered whether the provider CDNs honour the
 // size in a cover URL - they do - and that is not a question worth re-asking every session. The
 // collector and its panel are still in the tree, and `?probe=coverSizeAudit` still reaches them.

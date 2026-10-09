@@ -4,6 +4,7 @@ import { useAudioSettingsStore } from '../stores/useAudioSettingsStore';
 import { usePlaybackStore } from '../stores/usePlaybackStore';
 import { readCrashDiagnostics } from './crashDiagnostics';
 import { readPlaybackContinuitySnapshot } from './mediaDiagnostics';
+import { readFrameTimingSnapshot, runCpuProbe } from './frameTimingDiagnostics';
 import { readLastAiThemeAttempt, readAiThemeAttempts, readFailedAiThemeAttempts } from './aiThemeDiagnostics';
 import { isAiConfigured, readAiSettings } from '../services/aiSettings';
 
@@ -72,6 +73,68 @@ const readPlaybackContinuityLines = (): string[] => {
             + ` fade=${audioSettings.playbackFadeEnabled ? 'on' : 'off'}`,
         `  effects: enabled=${equalizer.enabled ? 'yes' : 'no'} noise=${effects.noise} crush=${effects.crush}`
             + ` drive=${effects.drive} wow=${effects.wow} punch=${effects.punch}`,
+    ];
+};
+
+/**
+ * 帧耗时与卡顿归属。用户报「卡顿」时先看这一段：
+ * 帧间隔分位数说明界面掉不掉帧，longtask 说明是不是我们自己的脚本占住主线程，
+ * 核数 / 内存 / 处理器探针说明设备本身够不够用。三条凑在一起才能分清
+ * 「我们的渲染开销」和「用户处理器性能不足」。
+ */
+const readFrameTimingLines = (): string[] => {
+    const frames = readFrameTimingSnapshot();
+    const continuity = readPlaybackContinuitySnapshot();
+    const stats = frames.stats;
+    const playback = usePlaybackStore.getState();
+    // 探针自己会阻塞主线程，放在读取快照之后：跳过窗口已经在采样侧设好，不会污染上面的数字。
+    const cpu = runCpuProbe();
+    const percent = (value: number | null) => (value === null ? 'n/a' : `${value.toFixed(1)}ms`);
+    const fps = (value: number | null) => (value === null ? 'n/a' : value.toFixed(1));
+    const ratio = (count: number) => (
+        stats.count > 0 ? `${((count / stats.count) * 100).toFixed(2)}%` : 'n/a'
+    );
+    const audioStalled = continuity.waitingCount > 0
+        || continuity.stalledCount > 0
+        || continuity.errorCount > 0;
+    const bufferLow = continuity.bufferedAheadSec !== null && continuity.bufferedAheadSec < 5;
+    // 我们的脚本占住主线程，和 GPU/合成器跟不上（设备渲染能力）是两种不同的卡顿。
+    const scriptHeavy = frames.longTasks.count >= 3 || frames.longTasks.maxMs >= 200;
+    const renderHeavy = frames.renderHealth === 'heavy';
+    let attribution = 'clean';
+    if (frames.renderHealth === 'unknown') attribution = 'insufficient-samples';
+    else if (renderHeavy && scriptHeavy) attribution = 'app-script';
+    else if (renderHeavy && audioStalled) attribution = 'device-throughput';
+    else if (renderHeavy) attribution = 'ui-thread-render';
+    else if (audioStalled) attribution = 'audio-pipeline';
+
+    return [
+        `  sampler: installed=${frames.installed ? 'yes' : 'no'} visible=${(frames.visibleMs / 1000).toFixed(1)}s`
+            + ` hidden=${(frames.hiddenMs / 1000).toFixed(1)}s frames=${frames.frameCount}`
+            + ` recent-window=${stats.count}`,
+        `  device: cores=${frames.cores ?? 'n/a'}`
+            + ` memory=${frames.memoryGb === null ? 'n/a' : `${frames.memoryGb}GB`} class=${frames.deviceClass}`,
+        `  display: refresh=${frames.refreshHz === null ? 'n/a' : `${frames.refreshHz}Hz`}`
+            + ` viewport=${typeof window === 'undefined' ? '' : `${window.innerWidth}x${window.innerHeight} dpr=${window.devicePixelRatio}`}`,
+        `  fps: recent-second=${fps(frames.recentSecondFps)} worst-second=${fps(frames.worstSecondFps)}`,
+        `  frame time: p50=${percent(stats.p50Ms)} p90=${percent(stats.p90Ms)} p95=${percent(stats.p95Ms)}`
+            + ` p99=${percent(stats.p99Ms)} max=${percent(stats.maxMs)}`,
+        `  dropped frames: slow>32ms=${stats.slowCount} (${ratio(stats.slowCount)})`
+            + ` jank>50ms=${stats.jankCount} (${ratio(stats.jankCount)}) freeze>100ms=${stats.freezeCount}`,
+        `  session totals: slow=${frames.sessionSlowCount} jank=${frames.sessionJankCount}`
+            + ` freeze=${frames.sessionFreezeCount} longest-freeze=${formatMilliseconds(frames.longestFreezeMs)}`,
+        `  long tasks (>50ms): count=${frames.longTasks.count}`
+            + ` total=${formatMilliseconds(frames.longTasks.totalMs)} max=${formatMilliseconds(frames.longTasks.maxMs)}`
+            + ` attribution: self=${frames.longTasks.selfCount} other=${frames.longTasks.otherCount}`
+            + ` unknown=${frames.longTasks.unknownCount}`,
+        `  cpu probe: ${(cpu.ops / 1e6).toFixed(1)}M ops in ${cpu.durationMs.toFixed(0)}ms`
+            + ` index=${cpu.index} (${(cpu.opsPerSecond / 1e6).toFixed(1)}M ops/s, 跨设备相对值)`,
+        `  playback while sampling: state=${String(playback.playerState)}`
+            + ` audio=${audioStalled ? 'stalled' : 'clean'} buffer-ahead=${formatSeconds(continuity.bufferedAheadSec)}`
+            + `${bufferLow ? ' (low)' : ''}`,
+        `  render health: ${frames.renderHealth}`,
+        // 归属结论连同两个决定性输入一起写出来，避免只看到结论没法复核。
+        `  attribution: ${attribution} (cpu=${cpu.index}, audio=${audioStalled ? 'stalled' : 'clean'})`,
     ];
 };
 
@@ -312,6 +375,10 @@ export const buildDiagnosticReport = async (): Promise<string> => {
         '',
         'playback continuity:',
         ...readPlaybackContinuityLines(),
+        '',
+        // 卡顿分流：帧耗时 + 长任务 + 处理器探针，用来区分我们的渲染开销和设备性能。
+        'frame timing:',
+        ...readFrameTimingLines(),
         '',
         'bottom bar geometry:',
         ...readBottomBarGeometry(),

@@ -34,6 +34,7 @@ import {
     resolveBgModeTheme,
 } from './themeControllerState';
 import { getPlaybackSongKey } from '../utils/appPlaybackGuards';
+import { recordAiThemeSkip } from '../utils/aiThemeDiagnostics';
 import { setStatusMessage as setStatusMsg } from '../stores/useStatusMessageStore';
 import { useStableCallbacks } from './useStableCallbacks';
 
@@ -613,6 +614,7 @@ export function useThemeController({
         const source = options.source ?? 'manual';
         const songKey = currentSong ? getPlaybackSongKey(currentSong) : '__no_song__';
         if (themeGenerationSongKeysRef.current.has(songKey)) {
+            recordAiThemeSkip('in-flight', source);
             return { status: 'skipped', reason: 'in-flight' };
         }
 
@@ -623,6 +625,8 @@ export function useThemeController({
             // The cover source never touches the model, so it also never needs a lyric prompt:
             // an instrumental with no title still gets a theme from its artwork.
             if (themeGenerationSource === 'cover') {
+                // 生成来源是「封面取色」时不会调用模型：报告里要能看出这一点，而不是「什么都没发生」。
+                recordAiThemeSkip('source-cover', source);
                 return await applyCoverDerivedTheme(
                     currentSong,
                     () => options.shouldApply?.() ?? true,
@@ -636,6 +640,7 @@ export function useThemeController({
             const promptText = (isPureMusic ? songTitle : allText) || allText;
 
             if (!promptText) {
+                recordAiThemeSkip('empty-prompt', source);
                 if (source === 'manual') {
                     setStatusMsg({ type: 'error', text: t('status.themeGenerationFailed') });
                 }

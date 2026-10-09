@@ -5,6 +5,7 @@ import {
     readFailedAiThemeAttempts,
     readLastAiThemeAttempt,
     recordAiThemeAttempt,
+    recordAiThemeSkip,
 } from '@/utils/aiThemeDiagnostics';
 
 // test/unit/diagnostics/aiThemeDiagnostics.test.ts
@@ -47,5 +48,20 @@ describe('aiThemeDiagnostics', () => {
         const attempts = readAiThemeAttempts();
         expect(attempts).toHaveLength(12);
         expect(attempts[attempts.length - 1].error?.length).toBeLessThanOrEqual(301);
+    });
+
+    // 「按了生成按钮却什么都没发生」以前在报告里是空白（attempts=0），跳过也要留痕。
+    it('records a skipped generation with its reason', () => {
+        recordAiThemeSkip('source-cover', 'manual');
+        recordAiThemeSkip('empty-prompt', 'auto');
+
+        const attempts = readAiThemeAttempts();
+        expect(attempts).toHaveLength(2);
+        expect(attempts[0].stage).toBe('skipped');
+        expect(attempts[0].provider).toBe('skipped');
+        expect(attempts[0].error).toBe('source-cover');
+        expect(attempts[0].trigger).toBe('manual');
+        expect(attempts[1].error).toBe('empty-prompt');
+        expect(attempts[1].durationMs).toBe(0);
     });
 });

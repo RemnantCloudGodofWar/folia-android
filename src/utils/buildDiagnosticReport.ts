@@ -373,7 +373,10 @@ const readAiThemeGenerationLines = (): string[] => {
     const settings = readAiSettings();
     const attempts = readAiThemeAttempts();
     const last = readLastAiThemeAttempt();
-    const failed = readFailedAiThemeAttempts();
+    // 未走到请求就被跳过的那几条（封面取色源 / 没有歌词 / 正在生成中）单独列，
+    // 免得和真正的模型失败混在一起 —— 「按了按钮什么都没发生」以前在报告里是空白。
+    const skips = attempts.filter(entry => entry.stage === 'skipped');
+    const failed = readFailedAiThemeAttempts().filter(entry => entry.stage !== 'skipped');
     const hostOf = (rawUrl: string): string => {
         if (!rawUrl) return '(default)';
         try {
@@ -387,9 +390,15 @@ const readAiThemeGenerationLines = (): string[] => {
             + ` configured=${isAiConfigured(settings) ? 'yes' : 'no'}`
             + ` model=${settings.provider === 'openai' ? (settings.openaiApiModel.trim() || '(default)') : 'gemini-3-flash-preview'}`,
         `  endpoint host: ${settings.provider === 'openai' ? hostOf(settings.openaiApiUrl.trim()) : 'generativelanguage.googleapis.com'}`,
-        `  attempts: total=${attempts.length} failed=${failed.length}`,
+        `  attempts: total=${attempts.length} failed=${failed.length} skipped=${skips.length}`,
         `  last: ${last ? formatAiThemeAttempt(last) : '(no AI theme generation recorded)'}`,
     ];
+    if (skips.length) {
+        lines.push('  skipped before the request:');
+        skips.slice(-5).forEach((entry, index) => {
+            lines.push(`    [${index + 1}] ${formatAiThemeAttempt(entry)}`);
+        });
+    }
     if (failed.length) {
         lines.push('  failed attempts:');
         failed.slice(-5).forEach((entry, index) => {

@@ -14,6 +14,7 @@ export type AiThemeStage =
     | 'parse'
     | 'sanitize'
     | 'web-endpoint'
+    | 'skipped'
     | 'unknown';
 
 export type AiThemeDiagnosticsEntry = {
@@ -75,4 +76,21 @@ export const readFailedAiThemeAttempts = (): AiThemeDiagnosticsEntry[] => (
 
 export const clearAiThemeDiagnostics = (): void => {
     entries.length = 0;
+};
+
+/**
+ * 还没走到请求就被跳过时也留一条痕迹（生成来源是「封面取色」、没有歌词、同一首歌正在生成中）。
+ *
+ * 「按下生成按钮却什么都没发生」以前在报告里完全看不到：`attempts` 是 0，用户和我们都只能猜。
+ * 这些跳过不是模型失败，报告里单独列一行，避免和真正的失败混在一起。
+ */
+export const recordAiThemeSkip = (reason: string, trigger: AiThemeTrigger = 'unknown'): void => {
+    recordAiThemeAttempt({
+        provider: 'skipped',
+        trigger,
+        stage: 'skipped',
+        ok: false,
+        error: reason,
+        durationMs: 0,
+    });
 };

@@ -957,8 +957,11 @@ export async function qqCheckLoginQr(params = {}) {
     if (dataNode && typeof dataNode === 'object') {
       if (dataNode.musickey) cookieMap.set('qm_keyst', `qm_keyst=${dataNode.musickey}`);
       if (dataNode.qqmusic_key) cookieMap.set('qqmusic_key', `qqmusic_key=${dataNode.qqmusic_key}`);
-      const id = String(dataNode.musicid || dataNode.uin || '').replace(/\D/g, '');
-      if (id) cookieMap.set('uin', `uin=o${id}`);
+      // musicid 不等于 QQ 号：部分账号两者并不相同，拿它覆盖 uin 会把后续所有请求
+      // （登录状态、歌单、喜欢、播放地址）带到另一个空账号上。这里只补缺失的 uin。
+      const musicId = String(dataNode.musicid || dataNode.uin || '').replace(/\D/g, '');
+      if (musicId && !cookieMap.has('uin') && !cookieMap.has('p_uin')) cookieMap.set('uin', `uin=o${musicId}`);
+      if (musicId && !cookieMap.has('str_musicid')) cookieMap.set('str_musicid', `str_musicid=${musicId}`);
     }
   } catch (_) {}
 
@@ -967,11 +970,17 @@ export async function qqCheckLoginQr(params = {}) {
   cookieMap.delete('tmeLoginType');
   cookieMap.set('login_type', 'login_type=1');
 
-  // 会话必须有账号 id 和播放票据。账号 id 优先用本次扫码的 uin，缺了就从 check_sig 兜底，
-  // 不从 jar 里捡 —— jar 里可能还躺着上一条通道的账号。
-  if (!cookieMap.has('uin') && !cookieMap.has('p_uin') && checkSigUin) {
+  // 会话的账号 id 必须是「你扫的那个 QQ 号」——check_sig 的 uin 参数就是它。
+  // musicid 或响应 Set-Cookie 里的 id 在部分账号上与之不同，必须以它为准，否则
+  // 登录状态、歌单、喜欢、播放地址全部会落到另一个（空的）账号上。
+  if (checkSigUin) {
+    const musicIdTail = String(cookieMap.get('uin') || cookieMap.get('p_uin') || '').replace(/\D/g, '').slice(-4);
     cookieMap.set('uin', `uin=o${checkSigUin}`);
-    noteQrLoginStep('qr:session:uin-from-check-sig', { uinTail: checkSigUin.slice(-4) });
+    if (!cookieMap.has('qqmusic_uin')) cookieMap.set('qqmusic_uin', `qqmusic_uin=o${checkSigUin}`);
+    noteQrLoginStep('qr:session:uin-from-check-sig', {
+      uinTail: checkSigUin.slice(-4),
+      ...(musicIdTail && musicIdTail !== checkSigUin.slice(-4) ? { replacedTail: musicIdTail } : {}),
+    });
   }
 
   const session = buildLoginSession(cookiePairsToHeader(Array.from(cookieMap.values())));

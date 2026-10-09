@@ -27,7 +27,7 @@ const jsonResponse = (body: unknown, status = 200) => new Response(JSON.stringif
 });
 
 /** 扫码成功 → check_sig 给出 p_skey → authorize 给出 code → musicu 由参数决定是否给 musickey。 */
-const stubTicketExchange = ({ musickey }: { musickey?: string }) => {
+const stubTicketExchange = ({ musickey, musicid = '2774749' }: { musickey?: string; musicid?: string }) => {
     fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
         const url = String(input instanceof Request ? input.url : input);
         if (url.includes('ptqrlogin')) return new Response(PTUI_SUCCESS, { status: 200 });
@@ -51,7 +51,7 @@ const stubTicketExchange = ({ musickey }: { musickey?: string }) => {
             });
         }
         if (url.includes('musicu.fcg')) {
-            return jsonResponse({ req: { code: 0, data: musickey ? { musickey, musicid: '2774749' } : {} } });
+            return jsonResponse({ req: { code: 0, data: musickey ? { musickey, musicid } : {} } });
         }
         return new Response('', { status: 404 });
     });
@@ -104,6 +104,7 @@ type QrCheckResult = {
     failureReason?: string;
     ticketExchangeAttempts?: number;
     loggedIn?: boolean;
+    session?: { cookie?: string };
 };
 
 const checkOnce = async (): Promise<QrCheckResult> => {
@@ -271,6 +272,20 @@ describe('QQ QR login after a WeChat session left cookies behind', () => {
         expect(header).not.toContain('leftover-key');
         // 传输类 cookie 仍然从罐里带上。
         expect(header).toContain('ptcz=transport-cookie');
+    });
+
+    // 现场报告（0.7.15-android.60）：扫的是 2774749，但 login-status 读到 uinTail=…9082，
+    // 「我喜欢」只回来 1 首 —— musicid 被当成 uin 覆盖了会话里的 QQ 号。
+    it('keeps the scanned QQ number as the session account when musicid differs', async () => {
+        stubTicketExchange({ musickey: 'fresh-qq-key', musicid: '3379082' });
+
+        const result = await checkOnce();
+
+        expect(result.isOk).toBe(true);
+        expect(result.session?.cookie).toContain('uin=o2774749');
+        expect(result.session?.cookie).not.toContain('uin=o3379082');
+        // musicid 仍然记下来，但它不是账号 id。
+        expect(result.session?.cookie).toContain('str_musicid=3379082');
     });
 });
 

@@ -25,7 +25,10 @@ const DEFAULT_OPENAI_CHAT_COMPLETIONS_URL = 'https://api.openai.com/v1/chat/comp
 const DEFAULT_OPENAI_MODEL = 'gpt-5.6-luna';
 const DEEPSEEK_DEFAULT_MODEL = 'deepseek-v4-flash';
 const DEFAULT_OPENAI_TEMPERATURE = 0.7;
-const THEME_MAX_OUTPUT_TOKENS = 4096;
+// 一份双主题 JSON 大约 1–2K token，但推理型模型会先把预算花在推理上（现场报告里 4096 的输出全部
+// 落在 stage=parse「Invalid AI theme JSON format」，与截断的表现一致）。放宽到 8192——DeepSeek
+// 与 OpenAI 均支持，若端点拒绝会在 400 里明确报出来，不会静默降级。
+const THEME_MAX_OUTPUT_TOKENS = 8192;
 
 /** 用户填的可能是基址、`/v1` 或完整地址，统一补成 chat/completions。 */
 export const normalizeChatCompletionsUrl = (rawUrl: string): string => {
@@ -68,6 +71,19 @@ const resolveTemperature = (value: string): number => {
     return Number.isFinite(temperature) && temperature >= 0 && temperature <= 2
         ? temperature
         : DEFAULT_OPENAI_TEMPERATURE;
+};
+
+/**
+ * 一次模型调用的原文与形态。
+ *
+ * 解析失败时最难判断的是「被 max_tokens 截断」还是「模型没按要求输出」——`finishReason` 与长度
+ * 一起记进错误，下一次报告就能直接看出来（`finish=length` 就是截断）。
+ */
+type AiThemeRawResponse = {
+    text: string;
+    finishReason: string;
+    status: number;
+    textLength: number;
 };
 
 const readErrorDetail = async (response: Response): Promise<string> => {
@@ -120,7 +136,7 @@ const describeEmptyResponse = (scope: string, response: Response, choice: unknow
     return `Model returned an empty response (${scope}, status ${response.status}, finish=${finish}, message keys: ${messageKeys})`;
 };
 
-const requestGeminiThemeJson = async (systemPrompt: string, sourcePrompt: string): Promise<string> => {
+const requestGeminiThemeJson = async (systemPrompt: string, sourcePrompt: string): Promise<AiThemeRawResponse> => {
     const settings = readAiSettings();
     const apiKey = settings.geminiApiKey.trim();
     if (!apiKey) throw new Error('GEMINI_API_KEY is not configured');
@@ -153,10 +169,10 @@ const requestGeminiThemeJson = async (systemPrompt: string, sourcePrompt: string
         const keys = data && typeof data === 'object' ? Object.keys(data).join('|') : 'none';
         throw new Error(`Model returned an empty response (gemini, status ${response.status}, keys: ${keys})`);
     }
-    return jsonText;
+    return { text: jsonText, finishReason: 'n/a', status: response.status, textLength: jsonText.length };
 };
 
-const requestOpenAiThemeJson = async (systemPrompt: string, sourcePrompt: string): Promise<string> => {
+const requestOpenAiThemeJson = async (systemPrompt: string, sourcePrompt: string): Promise<AiThemeRawResponse> => {
     const settings = readAiSettings();
     const apiKey = settings.openaiApiKey.trim();
     if (!apiKey) throw new Error('OPENAI_API_KEY is not configured');
@@ -198,7 +214,12 @@ const requestOpenAiThemeJson = async (systemPrompt: string, sourcePrompt: string
     const choice = data?.choices?.[0];
     const text = extractOpenAiText(choice?.message, choice);
     if (!text.trim()) throw new Error(describeEmptyResponse('openai-compatible', response, choice));
-    return text;
+    return {
+        text,
+        finishReason: typeof choice?.finish_reason === 'string' ? choice.finish_reason : 'none',
+        status: response.status,
+        textLength: text.length,
+    };
 };
 
 /**
@@ -221,12 +242,21 @@ export const generateThemeWithConfiguredAi = async (
     let stage: AiThemeStage = 'request';
 
     try {
-        const rawJson = provider === 'openai'
+        const raw = provider === 'openai'
             ? await requestOpenAiThemeJson(THEME_GENERATION_PROMPT_PREFIX, sourcePrompt)
             : await requestGeminiThemeJson(THEME_GENERATION_PROMPT_PREFIX, sourcePrompt);
 
         stage = 'parse';
-        const parsed = parseAiThemeJsonInput(rawJson);
+        let parsed: unknown;
+        try {
+            parsed = parseAiThemeJsonInput(raw.text);
+        } catch (error) {
+            // 把响应形态带进错误：finish=length 说明是被输出上限截断（推理模型很常见），
+            // 否则就是模型没按双主题 JSON 的格式回答。
+            throw new Error(
+                `${summarizeError(error)} [finish=${raw.finishReason}, chars=${raw.textLength}, status=${raw.status}]`,
+            );
+        }
         stage = 'sanitize';
         const theme = sanitizeDualTheme(parsed as DualTheme);
         const result = applyStoredAnimationIntensityToDualTheme(theme);

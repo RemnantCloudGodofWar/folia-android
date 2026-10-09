@@ -1,9 +1,11 @@
 import React from 'react';
 import { DEFAULT_CLADDAGH_TUNING } from '../../../types';
 import { defineVisualizer } from '../definition';
-import { CladdaghSettingsPanel } from '../settingsPanels';
 
 const VisualizerCladdagh = React.lazy(() => import('./VisualizerCladdagh'));
+const CladdaghSettingsPanel = React.lazy(async () => ({
+    default: (await import('../settingsPanels')).CladdaghSettingsPanel,
+}));
 
 // src/components/visualizer/claddagh/entry.tsx
 
@@ -16,7 +18,9 @@ export default defineVisualizer({
     previewStartOffset: 0,
     tuningKind: 'claddagh',
     render: props => <VisualizerCladdagh {...props} />,
-    renderSettingsPanel: props => <CladdaghSettingsPanel {...props} />,
+    renderSettingsPanel: props => (
+        <React.Suspense fallback={null}><CladdaghSettingsPanel {...props} /></React.Suspense>
+    ),
     resetSettings: ({ resetCladdaghTuning, setDraftCladdaghTuning }) => {
         setDraftCladdaghTuning?.(DEFAULT_CLADDAGH_TUNING);
         resetCladdaghTuning?.();

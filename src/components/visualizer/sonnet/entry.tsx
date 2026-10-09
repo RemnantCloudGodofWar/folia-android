@@ -1,9 +1,9 @@
 import React from 'react';
 import { DEFAULT_SONNET_TUNING } from '../../../types';
 import { defineVisualizer } from '../definition';
-import SonnetSettingsPanel from './SonnetSettingsPanel';
 
 const VisualizerSonnet = React.lazy(() => import('./VisualizerSonnet'));
+const SonnetSettingsPanel = React.lazy(() => import('./SonnetSettingsPanel'));
 
 // Every sonnet tunable is a multiplier: 1 leaves the builtin look unchanged.
 const SONNET_TUNABLE = { min: 0, max: 3, identity: 1 } as const;
@@ -37,7 +37,9 @@ export default defineVisualizer({
     // (see songHandover.ts / pixiRuntimeHost.ts). Remounting here would throw the WebGL
     // context away mid-transition and leave the frame empty for the whole rebuild.
     render: props => <VisualizerSonnet {...props} />,
-    renderSettingsPanel: props => <SonnetSettingsPanel {...props} />,
+    renderSettingsPanel: props => (
+        <React.Suspense fallback={null}><SonnetSettingsPanel {...props} /></React.Suspense>
+    ),
     resetSettings: ({ resetSonnetTuning, setDraftSonnetTuning }) => {
         setDraftSonnetTuning?.(DEFAULT_SONNET_TUNING);
         resetSonnetTuning?.();

@@ -1,8 +1,10 @@
 import React from 'react';
 import { defineVisualizer } from '../definition';
-import { TiltSettingsPanel } from '../settingsPanels';
 
 const VisualizerTilt = React.lazy(() => import('./VisualizerTilt'));
+const TiltSettingsPanel = React.lazy(async () => ({
+    default: (await import('../settingsPanels')).TiltSettingsPanel,
+}));
 
 // src/components/visualizer/tilt/entry.tsx
 // Registers Tilt and its preview tuning panel.
@@ -15,7 +17,9 @@ export default defineVisualizer({
     previewStartOffset: 0,
     tuningKind: 'tilt',
     render: props => <VisualizerTilt {...props} />,
-    renderSettingsPanel: props => <TiltSettingsPanel {...props} />,
+    renderSettingsPanel: props => (
+        <React.Suspense fallback={null}><TiltSettingsPanel {...props} /></React.Suspense>
+    ),
     resetSettings: ({ resetTiltTuning }) => {
         resetTiltTuning?.();
     },

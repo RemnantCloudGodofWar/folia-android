@@ -1,8 +1,10 @@
 import React from 'react';
 import { defineVisualizer } from '../definition';
-import { DioramaSettingsPanel } from '../settingsPanels';
 
 const VisualizerDiorama = React.lazy(() => import('./VisualizerDiorama'));
+const DioramaSettingsPanel = React.lazy(async () => ({
+    default: (await import('../settingsPanels')).DioramaSettingsPanel,
+}));
 
 // src/components/visualizer/diorama/entry.tsx
 // Registers Diorama: a procedural 3D lyric flythrough with lyric-synced cinematic camera work, plus
@@ -16,7 +18,9 @@ export default defineVisualizer({
     previewStartOffset: 0,
     tuningKind: 'diorama',
     render: props => <VisualizerDiorama {...props} />,
-    renderSettingsPanel: props => <DioramaSettingsPanel {...props} />,
+    renderSettingsPanel: props => (
+        <React.Suspense fallback={null}><DioramaSettingsPanel {...props} /></React.Suspense>
+    ),
     resetSettings: ({ resetDioramaTuning }) => {
         resetDioramaTuning?.();
     },

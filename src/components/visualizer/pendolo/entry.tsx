@@ -1,9 +1,9 @@
 import React from 'react';
 import { DEFAULT_PENDOLO_TUNING } from '../../../types';
 import { defineVisualizer } from '../definition';
-import PendoloSettingsPanel from './PendoloSettingsPanel';
 
 const VisualizerPendolo = React.lazy(() => import('./VisualizerPendolo'));
+const PendoloSettingsPanel = React.lazy(() => import('./PendoloSettingsPanel'));
 
 // src/components/visualizer/pendolo/entry.tsx
 
@@ -17,7 +17,9 @@ export default defineVisualizer({
     tuningKind: 'pendolo',
     // The song-scoped seed resets Pendolo's lyric rail state before the next track starts.
     render: props => <VisualizerPendolo key={props.seed} {...props} />,
-    renderSettingsPanel: props => <PendoloSettingsPanel {...props} />,
+    renderSettingsPanel: props => (
+        <React.Suspense fallback={null}><PendoloSettingsPanel {...props} /></React.Suspense>
+    ),
     resetSettings: ({ resetPendoloTuning, setDraftPendoloTuning }) => {
         setDraftPendoloTuning?.(DEFAULT_PENDOLO_TUNING);
         resetPendoloTuning?.();

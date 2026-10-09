@@ -1,9 +1,11 @@
 import React from 'react';
 import { DEFAULT_FUME_TUNING } from '../../../types';
 import { defineVisualizer } from '../definition';
-import { FumeSettingsPanel } from '../settingsPanels';
 
 const VisualizerFume = React.lazy(() => import('./VisualizerFume'));
+const FumeSettingsPanel = React.lazy(async () => ({
+    default: (await import('../settingsPanels')).FumeSettingsPanel,
+}));
 
 // src/components/visualizer/fume/entry.tsx
 // Registers Fume and its preview tuning panel.
@@ -16,7 +18,9 @@ export default defineVisualizer({
     previewStartOffset: 18.4,
     tuningKind: 'fume',
     render: props => <VisualizerFume {...props} />,
-    renderSettingsPanel: props => <FumeSettingsPanel {...props} />,
+    renderSettingsPanel: props => (
+        <React.Suspense fallback={null}><FumeSettingsPanel {...props} /></React.Suspense>
+    ),
     resetSettings: ({ resetFumeTuning, setDraftFumeTuning }) => {
         setDraftFumeTuning?.(DEFAULT_FUME_TUNING);
         resetFumeTuning?.();

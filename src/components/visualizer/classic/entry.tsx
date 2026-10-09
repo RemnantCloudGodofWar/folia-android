@@ -1,8 +1,10 @@
 import React from 'react';
 import { defineVisualizer } from '../definition';
-import { ClassicSettingsPanel } from '../settingsPanels';
 
 const Visualizer = React.lazy(() => import('./Visualizer'));
+const ClassicSettingsPanel = React.lazy(async () => ({
+    default: (await import('../settingsPanels')).ClassicSettingsPanel,
+}));
 
 // src/components/visualizer/classic/entry.tsx
 // Registers the classic visualizer mode.
@@ -16,7 +18,9 @@ export default defineVisualizer({
     tuningKind: 'classic',
     usesWordSegmentation: true,
     render: props => <Visualizer {...props} />,
-    renderSettingsPanel: props => <ClassicSettingsPanel {...props} />,
+    renderSettingsPanel: props => (
+        <React.Suspense fallback={null}><ClassicSettingsPanel {...props} /></React.Suspense>
+    ),
     resetSettings: ({ resetClassicTuning }) => {
         resetClassicTuning?.();
     },

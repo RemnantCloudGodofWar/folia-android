@@ -4,6 +4,8 @@ import { useAudioSettingsStore } from '../stores/useAudioSettingsStore';
 import { usePlaybackStore } from '../stores/usePlaybackStore';
 import { readCrashDiagnostics } from './crashDiagnostics';
 import { readPlaybackContinuitySnapshot } from './mediaDiagnostics';
+import { readLastAiThemeAttempt, readAiThemeAttempts, readFailedAiThemeAttempts } from './aiThemeDiagnostics';
+import { isAiConfigured, readAiSettings } from '../services/aiSettings';
 
 // src/utils/buildDiagnosticReport.ts
 // 设置 → 帮助 → 复制诊断数据。给用户原样贴进 issue 用，所以字段固定为英文并包在代码块里。
@@ -143,6 +145,64 @@ const readBottomBarGeometry = (): string[] => {
     }
 };
 
+/**
+ * AI 主题生成现场：provider、模型、触发方式、请求状态、原始错误与耗时。
+ *
+ * 「偶尔报错」最难查的是它不可复现，所以这里把最近几次调用（含成功的）都留一份，
+ * 失败时还能看到失败前一次是否成功、耗时是否异常。只导出错误原文，不导出提示词或 Key。
+ */
+const readAiThemeGenerationLines = (): string[] => {
+    const settings = readAiSettings();
+    const attempts = readAiThemeAttempts();
+    const last = readLastAiThemeAttempt();
+    const failed = readFailedAiThemeAttempts();
+    const hostOf = (rawUrl: string): string => {
+        if (!rawUrl) return '(default)';
+        try {
+            return new URL(rawUrl).hostname || '(default)';
+        } catch {
+            return '(invalid url)';
+        }
+    };
+    const lines: string[] = [
+        `  provider: ${settings.provider}`
+            + ` configured=${isAiConfigured(settings) ? 'yes' : 'no'}`
+            + ` model=${settings.provider === 'openai' ? (settings.openaiApiModel.trim() || '(default)') : 'gemini-3-flash-preview'}`,
+        `  endpoint host: ${settings.provider === 'openai' ? hostOf(settings.openaiApiUrl.trim()) : 'generativelanguage.googleapis.com'}`,
+        `  attempts: total=${attempts.length} failed=${failed.length}`,
+        `  last: ${last ? formatAiThemeAttempt(last) : '(no AI theme generation recorded)'}`,
+    ];
+    if (failed.length) {
+        lines.push('  failed attempts:');
+        failed.slice(-5).forEach((entry, index) => {
+            lines.push(`    [${index + 1}] ${formatAiThemeAttempt(entry)}`);
+        });
+    }
+    return lines;
+};
+
+const formatAiThemeAttempt = (entry: {
+    at: number;
+    provider: string;
+    model: string;
+    trigger: string;
+    stage: string;
+    ok: boolean;
+    status?: number;
+    error?: string;
+    durationMs: number;
+}): string => (
+    `at=${new Date(entry.at).toISOString()}`
+    + ` provider=${entry.provider}`
+    + ` model=${entry.model}`
+    + ` trigger=${entry.trigger}`
+    + ` ok=${entry.ok ? 'yes' : 'no'}`
+    + ` stage=${entry.stage}`
+    + (entry.status ? ` status=${entry.status}` : '')
+    + ` duration=${entry.durationMs}ms`
+    + (entry.error ? ` error=${entry.error}` : '')
+);
+
 export const buildDiagnosticReport = async (): Promise<string> => {
     const appVersion = typeof __APP_VERSION__ === 'undefined' ? 'unknown' : __APP_VERSION__;
     const capacitor = (window as unknown as { Capacitor?: { getPlatform?: () => string; isNativePlatform?: () => boolean } }).Capacitor;
@@ -174,6 +234,9 @@ export const buildDiagnosticReport = async (): Promise<string> => {
         '',
         'bottom bar geometry:',
         ...readBottomBarGeometry(),
+        '',
+        'ai theme generation:',
+        ...readAiThemeGenerationLines(),
         '',
         'library request trace:',
     ];

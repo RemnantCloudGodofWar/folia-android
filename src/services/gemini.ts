@@ -4,6 +4,8 @@ import { sanitizeDualTheme } from "./themeSanitizer";
 import { getWebAiProvider } from "./runtimeConfig";
 import { isAiBridgeFetchAvailable } from './aiNativeFetch';
 import { generateThemeWithConfiguredAi } from './aiThemeClient';
+import type { AiThemeTrigger } from '../utils/aiThemeDiagnostics';
+import { recordAiThemeAttempt } from '../utils/aiThemeDiagnostics';
 
 const getErrorMessage = (error: unknown) => {
   if (error instanceof Error) {
@@ -20,7 +22,7 @@ export const isMissingAiApiKeyError = (error: unknown) => {
 
 export const generateThemeFromLyrics = async (
   lyricsText: string,
-  options?: { isPureMusic?: boolean; songTitle?: string }
+  options?: { isPureMusic?: boolean; songTitle?: string; trigger?: AiThemeTrigger }
 ): Promise<DualTheme> => {
   try {
     // Check if running in Electron environment
@@ -32,11 +34,16 @@ export const generateThemeFromLyrics = async (
     // 安卓容器里既没有 Electron 主进程，也没有部署端接口，直接用用户自己填的 Key 请求。
     // 没配 Key 时抛出的消息与桌面版一致，调用方照旧显示「请先配置 API Key」。
     if (isAiBridgeFetchAvailable()) {
-      return await generateThemeWithConfiguredAi(lyricsText, options);
+      return await generateThemeWithConfiguredAi(lyricsText, {
+        isPureMusic: options?.isPureMusic,
+        songTitle: options?.songTitle,
+        trigger: options?.trigger,
+      });
     }
 
     const provider = getWebAiProvider();
     const endpoint = provider === 'openai' ? '/api/generate-theme_openai' : '/api/generate-theme';
+    const startedAt = Date.now();
 
     const response = await fetch(endpoint, {
       method: 'POST',
@@ -47,11 +54,28 @@ export const generateThemeFromLyrics = async (
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || 'Failed to generate theme');
+      const errorData = await response.json().catch(() => ({}));
+      recordAiThemeAttempt({
+        provider,
+        trigger: options?.trigger,
+        stage: 'web-endpoint',
+        ok: false,
+        status: response.status,
+        error: (errorData as { error?: string }).error || `HTTP ${response.status}`,
+        durationMs: Date.now() - startedAt,
+      });
+      throw new Error((errorData as { error?: string }).error || 'Failed to generate theme');
     }
 
     const dualTheme = await response.json();
+    recordAiThemeAttempt({
+      provider,
+      trigger: options?.trigger,
+      stage: 'request',
+      ok: true,
+      status: response.status,
+      durationMs: Date.now() - startedAt,
+    });
     return applyStoredAnimationIntensityToDualTheme(sanitizeDualTheme(dualTheme as DualTheme));
   } catch (error) {
     console.error("Failed to generate theme via API:", error);

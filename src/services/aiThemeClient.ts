@@ -8,6 +8,11 @@ import { applyStoredAnimationIntensityToDualTheme } from './themePreferences';
 import { parseAiThemeJsonInput } from '../utils/aiThemePrompts';
 import { createAiFetch } from './aiNativeFetch';
 import { readAiSettings } from './aiSettings';
+import {
+    recordAiThemeAttempt,
+    type AiThemeStage,
+    type AiThemeTrigger,
+} from '../utils/aiThemeDiagnostics';
 // @ts-ignore -- 共享的纯 ESM 模块，无类型声明。
 import { THEME_GENERATION_PROMPT_PREFIX, buildThemeSourcePrompt } from '../../shared/themeGenerationPrompt.mjs';
 // @ts-ignore -- 共享的纯 ESM 模块，无类型声明。
@@ -174,19 +179,53 @@ const requestOpenAiThemeJson = async (systemPrompt: string, sourcePrompt: string
  */
 export const generateThemeWithConfiguredAi = async (
     lyricsText: string,
-    options?: { isPureMusic?: boolean; songTitle?: string },
+    options?: { isPureMusic?: boolean; songTitle?: string; trigger?: AiThemeTrigger },
 ): Promise<DualTheme> => {
     const settings = readAiSettings();
     const snippet = String(lyricsText || '').slice(0, 2000);
     const sourcePrompt = buildThemeSourcePrompt(snippet, options?.isPureMusic === true, options?.songTitle);
+    const provider = settings.provider;
+    const model = provider === 'openai'
+        ? resolveOpenAiModel(normalizeChatCompletionsUrl(settings.openaiApiUrl), settings.openaiApiModel)
+        : 'gemini-3-flash-preview';
+    const trigger: AiThemeTrigger = options?.trigger ?? 'unknown';
+    const startedAt = Date.now();
+    let stage: AiThemeStage = 'request';
 
-    const rawJson = settings.provider === 'openai'
-        ? await requestOpenAiThemeJson(THEME_GENERATION_PROMPT_PREFIX, sourcePrompt)
-        : await requestGeminiThemeJson(THEME_GENERATION_PROMPT_PREFIX, sourcePrompt);
+    try {
+        const rawJson = provider === 'openai'
+            ? await requestOpenAiThemeJson(THEME_GENERATION_PROMPT_PREFIX, sourcePrompt)
+            : await requestGeminiThemeJson(THEME_GENERATION_PROMPT_PREFIX, sourcePrompt);
 
-    const parsed = parseAiThemeJsonInput(rawJson);
-    const theme = sanitizeDualTheme(parsed as DualTheme);
-    return applyStoredAnimationIntensityToDualTheme(theme);
+        stage = 'parse';
+        const parsed = parseAiThemeJsonInput(rawJson);
+        stage = 'sanitize';
+        const theme = sanitizeDualTheme(parsed as DualTheme);
+        const result = applyStoredAnimationIntensityToDualTheme(theme);
+        recordAiThemeAttempt({
+            provider,
+            model,
+            trigger,
+            stage: 'request',
+            ok: true,
+            durationMs: Date.now() - startedAt,
+        });
+        return result;
+    } catch (error) {
+        const message = summarizeError(error);
+        const status = /\((\d{3})\)/.exec(message)?.[1];
+        recordAiThemeAttempt({
+            provider,
+            model,
+            trigger,
+            stage,
+            ok: false,
+            status: status ? Number(status) : undefined,
+            error: message,
+            durationMs: Date.now() - startedAt,
+        });
+        throw error;
+    }
 };
 
 export interface AiConnectionTestResult {

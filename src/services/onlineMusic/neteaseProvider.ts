@@ -21,6 +21,7 @@ import { readProviderSessionValue, writeProviderSessionValue } from './providerS
 import { collectLoginBackendDiagnostics } from './loginBackendDiagnostics';
 import { canRunLoginSelfCheck, runLoginSelfCheck } from './loginSelfCheck';
 import { formatDiagnosticClock } from '../../utils/qrLoginDiagnosticReport';
+import { proxyNativeRemoteAudioUrl } from '../nativeRemoteAudio';
 import { notePlaybackStreamInfo } from '../../utils/mediaDiagnostics';
 import { isConnectionResetMessage, isNetworkFailureMessage } from '../../../shared/networkErrorText.mjs';
 
@@ -350,7 +351,7 @@ export const neteaseProvider: OnlineMusicProvider = {
                 trial: Boolean(raw?.freeTrialInfo),
             });
             return {
-                url,
+                url: await proxyNativeRemoteAudioUrl(url),
                 fetchedAt: Date.now(),
                 quality,
                 ...(trackGain === undefined ? {} : { replayGain: { trackGain } }),

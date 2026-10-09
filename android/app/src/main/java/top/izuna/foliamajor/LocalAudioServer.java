@@ -82,8 +82,10 @@ final class LocalAudioServer {
     synchronized String registerRemoteAudio(String value) throws IOException {
         URL url = new URL(value);
         String host = url.getHost() == null ? "" : url.getHost().toLowerCase();
+        boolean supportedHost = host.equals("kuwo.cn") || host.endsWith(".kuwo.cn")
+            || host.equals("music.126.net") || host.endsWith(".music.126.net");
         if (!("http".equals(url.getProtocol()) || "https".equals(url.getProtocol()))
-            || !(host.equals("kuwo.cn") || host.endsWith(".kuwo.cn"))) {
+            || !supportedHost) {
             throw new IOException("Unsupported remote audio host");
         }
         int localPort = start();
@@ -213,7 +215,8 @@ final class LocalAudioServer {
             .url(remoteUrl)
             .get()
             .header("User-Agent", "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36")
-            .header("Referer", "https://www.kuwo.cn/");
+            .header("Referer", remoteAudioReferer(remoteUrl))
+            .header("Accept-Encoding", "identity");
         String range = headers.get("range");
         if (range != null) request.header("Range", range);
 
@@ -340,6 +343,16 @@ final class LocalAudioServer {
             if (value != '\r') line.append((char) value);
         }
         return value == -1 && line.length() == 0 ? null : line.toString();
+    }
+
+    private static String remoteAudioReferer(String remoteUrl) {
+        try {
+            String host = new URL(remoteUrl).getHost();
+            if (host != null && (host.equals("music.126.net") || host.endsWith(".music.126.net"))) {
+                return "https://music.163.com/";
+            }
+        } catch (Exception ignored) {}
+        return "https://www.kuwo.cn/";
     }
 
     private static void writeStatus(OutputStream output, int status, String message) throws IOException {

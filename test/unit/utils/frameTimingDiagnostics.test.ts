@@ -8,6 +8,7 @@ import {
     readFrameTimingSnapshot,
     resetFrameTimingDiagnostics,
     runCpuProbe,
+    summarizeLongAnimationFrame,
 } from '@/utils/frameTimingDiagnostics';
 
 afterEach(() => {
@@ -80,6 +81,44 @@ describe('frameTimingDiagnostics', () => {
         expect(describeCpuIndex(50e6)).toBe('moderate');
         expect(describeCpuIndex(10e6)).toBe('slow');
         expect(describeCpuIndex(Number.NaN)).toBe('unknown');
+    });
+
+    // 卡顿归因的关键一步：这一帧是被脚本占住，还是被样式/布局占住，以及最重的是哪个文件。
+    it('attributes a long frame to script versus style and layout', () => {
+        const summary = summarizeLongAnimationFrame({
+            duration: 180,
+            blockingDuration: 130,
+            renderStart: 100,
+            styleAndLayoutStart: 60,
+            scripts: [
+                {
+                    duration: 40,
+                    invoker: 'requestAnimationFrame',
+                    sourceFunctionName: 'renderFrame',
+                    sourceURL: 'https://localhost/assets/folia-abc.js',
+                },
+                {
+                    duration: 60,
+                    invoker: 'timer',
+                    sourceFunctionName: 'tick',
+                    sourceURL: 'https://localhost/assets/main-def.js',
+                },
+            ],
+        });
+
+        expect(summary.blockingMs).toBe(130);
+        expect(summary.scriptMs).toBe(100);
+        expect(summary.styleLayoutMs).toBe(40);
+        // 最重的那段脚本（60ms）决定归因，且只留文件名。
+        expect(summary.invoker).toBe('timer@tick@main-def.js');
+    });
+
+    it('falls back to the frame duration when blockingDuration is missing', () => {
+        const summary = summarizeLongAnimationFrame({ duration: 120, scripts: [] });
+
+        expect(summary.blockingMs).toBe(70);
+        expect(summary.scriptMs).toBe(0);
+        expect(summary.invoker).toBe('');
     });
 
     it('reports an uninstalled sampler without throwing off the browser', () => {

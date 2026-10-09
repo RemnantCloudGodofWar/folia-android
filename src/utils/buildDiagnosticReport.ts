@@ -73,7 +73,8 @@ const readPlaybackContinuityLines = (): string[] => {
                 + `${stream.requestedLevel ? `(requested ${stream.requestedLevel})` : ''}`
                 + ` br=${stream.bitrateKbps === null ? 'n/a' : `${Math.round(stream.bitrateKbps)}kbps`}`
                 + ` format=${stream.format} host=${stream.host}`
-                + `${stream.sizeMb === null ? '' : ` size=${stream.sizeMb.toFixed(1)}MB`}`
+                + `${stream.sizeMb === null ? ''
+                    : ` size=${(stream.sizeMb < 1 ? stream.sizeMb.toFixed(2) : stream.sizeMb.toFixed(1))}MB`}`
                 + `${stream.trial ? ' TRIAL-CLIP' : ''}`
             : '(not recorded)'}`,
         `  deck: ${continuity.deck} readyState=${continuity.readyState} networkState=${continuity.networkState}`,
@@ -126,8 +127,13 @@ const readFrameTimingLines = (): string[] => {
         || continuity.stalledCount > 0
         || continuity.errorCount > 0;
     const bufferLow = continuity.bufferedAheadSec !== null && continuity.bufferedAheadSec < 5;
+    const loaf = frames.longAnimationFrames;
     // 我们的脚本占住主线程，和 GPU/合成器跟不上（设备渲染能力）是两种不同的卡顿。
-    const scriptHeavy = frames.longTasks.count >= 3 || frames.longTasks.maxMs >= 200;
+    // 有 LoAF 数据时用「脚本 vs 样式/布局」的实际占比判断，比只看长任务条数可靠得多；
+    // 没有 LoAF 的旧内核退回长任务启发式。
+    const scriptHeavy = loaf.count > 0
+        ? loaf.scriptMs >= loaf.styleLayoutMs && loaf.scriptMs >= 30
+        : (frames.longTasks.count >= 3 || frames.longTasks.maxMs >= 200);
     const renderHeavy = frames.renderHealth === 'heavy';
     let attribution = 'clean';
     if (frames.renderHealth === 'unknown') attribution = 'insufficient-samples';
@@ -155,6 +161,15 @@ const readFrameTimingLines = (): string[] => {
             + ` total=${formatMilliseconds(frames.longTasks.totalMs)} max=${formatMilliseconds(frames.longTasks.maxMs)}`
             + ` attribution: self=${frames.longTasks.selfCount} other=${frames.longTasks.otherCount}`
             + ` unknown=${frames.longTasks.unknownCount}`,
+        // 这一行才说得清「到底是被谁占住的」：脚本 / 样式与布局 / 最重的那个文件与函数。
+        `  long animation frames (>50ms): count=${loaf.count}`
+            + ` max-blocking=${formatMilliseconds(loaf.maxBlockingMs)}`
+            + ` scripts=${formatMilliseconds(loaf.scriptMs)}`
+            + ` style+layout=${formatMilliseconds(loaf.styleLayoutMs)}`
+            + ` worst=${formatMilliseconds(loaf.worstBlockingMs)}`
+            + ` (script ${formatMilliseconds(loaf.worstScriptMs)}`
+            + ` + style/layout ${formatMilliseconds(loaf.worstStyleLayoutMs)}`
+            + ` @${loaf.worstInvoker || 'unknown'})`,
         `  cpu probe: ${(cpu.ops / 1e6).toFixed(1)}M ops in ${cpu.durationMs.toFixed(0)}ms`
             + ` index=${cpu.index} (${(cpu.opsPerSecond / 1e6).toFixed(1)}M ops/s, 跨设备相对值)`,
         `  playback while sampling: state=${String(playback.playerState)}`

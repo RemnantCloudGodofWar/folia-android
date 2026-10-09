@@ -18,6 +18,7 @@ const MAX_RECORDED_INTERVAL_MS = 5000;
 /** 环形缓冲：4096 帧 ≈ 60Hz 下 68 秒，报告里的分位数只看这段「最近窗口」。 */
 const INTERVAL_CAPACITY = 4096;
 const LONG_TASK_THRESHOLD_MS = 50;
+const LONG_ANIMATION_FRAME_THRESHOLD_MS = 50;
 
 export type FrameStats = {
     count: number;
@@ -39,6 +40,29 @@ export type LongTaskStats = {
     selfCount: number;
     otherCount: number;
     unknownCount: number;
+};
+
+/**
+ * Long Animation Frame（Chrome 123+）比 longtask 多说三件事：这一帧被阻塞了多久、
+ * 时间花在「脚本」还是「样式/布局」、以及最重的那段脚本在哪。卡顿归因靠它才能落到人头上。
+ */
+export type LongAnimationFrameStats = {
+    count: number;
+    maxBlockingMs: number;
+    scriptMs: number;
+    styleLayoutMs: number;
+    worstBlockingMs: number;
+    worstScriptMs: number;
+    worstStyleLayoutMs: number;
+    worstInvoker: string;
+};
+
+type LongAnimationFrameEntryLike = {
+    duration?: number;
+    blockingDuration?: number;
+    renderStart?: number;
+    styleAndLayoutStart?: number;
+    scripts?: Array<{ duration?: number; invoker?: string; sourceURL?: string; sourceFunctionName?: string }>;
 };
 
 export type CpuProbeResult = {
@@ -68,6 +92,7 @@ export type FrameTimingSnapshot = {
     memoryGb: number | null;
     deviceClass: 'low' | 'mid' | 'high' | 'unknown';
     longTasks: LongTaskStats;
+    longAnimationFrames: LongAnimationFrameStats;
     renderHealth: FrameRenderHealth;
 };
 
@@ -79,6 +104,63 @@ const emptyLongTasks = (): LongTaskStats => ({
     otherCount: 0,
     unknownCount: 0,
 });
+
+const emptyLongAnimationFrames = (): LongAnimationFrameStats => ({
+    count: 0,
+    maxBlockingMs: 0,
+    scriptMs: 0,
+    styleLayoutMs: 0,
+    worstBlockingMs: 0,
+    worstScriptMs: 0,
+    worstStyleLayoutMs: 0,
+    worstInvoker: '',
+});
+
+/** 只留文件名：绝对路径不进报告。 */
+const scriptSourceLabel = (raw?: string): string => {
+    if (!raw) return '';
+    try {
+        return new URL(raw).pathname.split('/').filter(Boolean).pop() || '';
+    } catch {
+        const parts = String(raw).split(/[\\/]/);
+        return parts[parts.length - 1] || '';
+    }
+};
+
+/** 把一条 LoAF 记录压成「阻塞多久 / 脚本多久 / 样式布局多久 / 最重的脚本在哪」。 */
+export const summarizeLongAnimationFrame = (
+    entry: LongAnimationFrameEntryLike,
+): { blockingMs: number; scriptMs: number; styleLayoutMs: number; invoker: string } => {
+    const duration = Number(entry.duration);
+    const blocking = Number(entry.blockingDuration);
+    const blockingMs = Number.isFinite(blocking)
+        ? Math.max(0, blocking)
+        : (Number.isFinite(duration) ? Math.max(0, duration - LONG_ANIMATION_FRAME_THRESHOLD_MS) : 0);
+
+    let scriptMs = 0;
+    let worstScriptMs = -1;
+    let invoker = '';
+    (Array.isArray(entry.scripts) ? entry.scripts : []).forEach((script) => {
+        const ms = Number(script?.duration);
+        if (!Number.isFinite(ms) || ms <= 0) return;
+        scriptMs += ms;
+        if (ms <= worstScriptMs) return;
+        worstScriptMs = ms;
+        const fn = script?.sourceFunctionName ? String(script.sourceFunctionName) : '';
+        const file = scriptSourceLabel(script?.sourceURL ? String(script.sourceURL) : '');
+        invoker = [String(script?.invoker || ''), fn, file].filter(Boolean).join('@');
+    });
+
+    const renderStart = Number(entry.renderStart);
+    const styleAndLayoutStart = Number(entry.styleAndLayoutStart);
+    const styleLayoutMs = Number.isFinite(renderStart)
+        && Number.isFinite(styleAndLayoutStart)
+        && renderStart >= styleAndLayoutStart
+        ? renderStart - styleAndLayoutStart
+        : 0;
+
+    return { blockingMs, scriptMs, styleLayoutMs, invoker };
+};
 
 const intervalBuffer = new Float64Array(INTERVAL_CAPACITY);
 let intervalCursor = 0;
@@ -102,6 +184,7 @@ let bucketFrames = 0;
 let worstSecondFps: number | null = null;
 let recentSecondFps: number | null = null;
 let longTasks = emptyLongTasks();
+let longAnimationFrames = emptyLongAnimationFrames();
 
 // CPU 探针自己会阻塞主线程：那一次长任务和那一帧不算用户的卡顿，按时间窗口跳过。
 let probeFromMs: number | null = null;
@@ -379,11 +462,49 @@ const installLongTaskObserver = (): void => {
     }
 };
 
+/**
+ * Long Animation Frame：给「这一帧到底被谁占住」做归因。
+ * longtask 只能说「主线程卡了 113ms」，LoAF 能说是脚本 90ms 还是样式/布局 60ms，
+ * 并给出最重的那个脚本文件/函数名。
+ */
+const installLongAnimationFrameObserver = (): void => {
+    if (typeof PerformanceObserver === 'undefined') return;
+    try {
+        const observer = new PerformanceObserver((list) => {
+            list.getEntries().forEach((entry) => {
+                if (insideProbeWindow(entry.startTime)) return;
+                const summary = summarizeLongAnimationFrame(entry as unknown as LongAnimationFrameEntryLike);
+                if (summary.blockingMs < LONG_ANIMATION_FRAME_THRESHOLD_MS) return;
+                longAnimationFrames = {
+                    ...longAnimationFrames,
+                    count: longAnimationFrames.count + 1,
+                    maxBlockingMs: Math.max(longAnimationFrames.maxBlockingMs, summary.blockingMs),
+                    scriptMs: longAnimationFrames.scriptMs + summary.scriptMs,
+                    styleLayoutMs: longAnimationFrames.styleLayoutMs + summary.styleLayoutMs,
+                };
+                if (summary.blockingMs >= longAnimationFrames.worstBlockingMs) {
+                    longAnimationFrames = {
+                        ...longAnimationFrames,
+                        worstBlockingMs: summary.blockingMs,
+                        worstScriptMs: summary.scriptMs,
+                        worstStyleLayoutMs: summary.styleLayoutMs,
+                        worstInvoker: summary.invoker || 'unknown',
+                    };
+                }
+            });
+        });
+        observer.observe({ type: 'long-animation-frame', buffered: true } as PerformanceObserverInit);
+    } catch {
+        // Chrome < 123 没有 LoAF：longtask / 帧间隔仍然照旧记录。
+    }
+};
+
 export const installFrameTimingDiagnostics = (): void => {
     if (installed) return;
     if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') return;
     installed = true;
     installLongTaskObserver();
+    installLongAnimationFrameObserver();
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') hiddenSinceMs = nowMs();
     else frameLoopHandle = nativeRequestAnimationFrame(onFrame);
     if (typeof document !== 'undefined') {
@@ -417,6 +538,7 @@ export const resetFrameTimingDiagnostics = (): void => {
     worstSecondFps = null;
     recentSecondFps = null;
     longTasks = emptyLongTasks();
+    longAnimationFrames = emptyLongAnimationFrames();
     probeFromMs = null;
     probeUntilMs = null;
 };
@@ -449,6 +571,7 @@ export const readFrameTimingSnapshot = (): FrameTimingSnapshot => {
         memoryGb,
         deviceClass: describeDeviceClass(cores, memoryGb),
         longTasks,
+        longAnimationFrames,
         renderHealth: classifyRenderHealth(stats, refreshHz),
     };
 };

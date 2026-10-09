@@ -342,7 +342,8 @@ export const neteaseProvider: OnlineMusicProvider = {
                 provider: 'netease',
                 requestedLevel: mapQuality(quality),
                 resolvedLevel: String(raw?.level ?? 'unknown'),
-                bitrateKbps: Number(raw?.br) || null,
+                // 网易云的 br 是比特每秒（320000 = 320kbps），报告里统一按 kbps 记。
+                bitrateKbps: Number(raw?.br) ? Number(raw.br) / 1000 : null,
                 format: String(raw?.type ?? mediaSuffixOf(url)),
                 host: mediaHostOf(url),
                 sizeMb: Number(raw?.size) ? Number(raw.size) / 1048576 : null,

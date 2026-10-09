@@ -16,6 +16,7 @@
 import { UA } from './weapi.js';
 import { clearCookieCache, removeBrowserCookies, setBrowserCookies } from './cookies.js';
 import { noteQrLoginStep, resetQrLoginTrace } from './qrLoginTrace.js';
+import { readRawSetCookies } from './setCookieHeaders.js';
 
 const QQ_PT_APPID = '716027609';
 const QQ_PT_DAID = '383';
@@ -147,17 +148,22 @@ const COOKIE_WRITE_TIMEOUT_MS = 5000;
 
 /** 给一段收尾工作加上截止时间；无论成功、失败还是超时都会结算成 fallback。 */
 function settleWithin(promise, ms, fallback, label) {
+  let timer = null;
   const work = Promise.resolve(promise).catch((err) => {
     noteQrLoginStep(`${label}:failed`, { message: err?.message || String(err) });
     return fallback;
   });
-  return Promise.race([
-    work,
-    new Promise((resolve) => setTimeout(() => {
+  const deadline = new Promise((resolve) => {
+    timer = setTimeout(() => {
       noteQrLoginStep(`${label}:timeout`, { ms });
       resolve(fallback);
-    }, ms)),
-  ]);
+    }, ms);
+  });
+  // 计时器必须清掉：早结算的一段工作如果留着这个 timer，会在几百毫秒后往追踪里写一条
+  // 假的 `:timeout` —— 报告上看不出区别，但会把排查方向带偏。
+  return Promise.race([work, deadline]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
 }
 
 /**
@@ -214,15 +220,11 @@ function parseSetCookieRaw(setCookieHeader) {
 
 function collectSetCookies(resp) {
   const list = [];
-  try {
-    if (resp && resp.headers && typeof resp.headers.getSetCookie === 'function') {
-      list.push(...parseSetCookieRaw(resp.headers.getSetCookie()));
-      return list;
-    }
-  } catch (_) {}
-  try {
-    list.push(...parseSetCookieRaw(resp && resp.headers && resp.headers.get('Set-Cookie')));
-  } catch (_) {}
+  // 安卓桥把 Set-Cookie 镜像到 x-folia-set-cookie（见 setCookieHeaders.js），
+  // 只认 getSetCookie() 的话在安卓上永远是空的。
+  readRawSetCookies(resp).forEach((raw) => {
+    list.push(...parseSetCookieRaw(raw));
+  });
   return list;
 }
 
@@ -422,6 +424,11 @@ export async function qqGetLoginQr() {
   u.searchParams.set('daid', QQ_PT_DAID);
   u.searchParams.set('pt_3rd_aid', QQ_PT_AID);
   u.searchParams.set('u1', QQ_PT_U1);
+
+  // 先把上一次扫码留下的 qrsig 删掉再要新码：它就是「新二维码第一次轮询就失效」的来源 ——
+  // Set-Cookie 不可见时只能从罐里回捞 qrsig，捞到旧值的话服务端当然不认这个码。
+  await removeBrowserCookies('https://ssl.ptlogin2.qq.com/', ['qrsig']).catch(() => undefined);
+  await removeBrowserCookies('https://qq.com/', ['qrsig']).catch(() => undefined);
 
   const response = await fetchWithTimeout(u.toString(), {
     method: 'GET',

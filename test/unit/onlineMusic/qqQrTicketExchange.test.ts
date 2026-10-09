@@ -11,6 +11,8 @@ const fetchMock = vi.fn();
 let checkSigCalls = 0;
 /** cookie 罐的桩：两条通道共用 .qq.com 上的同一批 cookie，跨通道污染就是从这里来的。 */
 let jarPairs: string[] = [];
+/** 模拟「删不掉」的 cookie（域 cookie 用 host-only 删除够不着），用来验证响应头优先。 */
+let stickyCookieNames: string[] = [];
 
 const cookieEntry = (pair: string) => {
     const eq = pair.indexOf('=');
@@ -62,7 +64,9 @@ const stubBrowser = () => {
             ),
             set: async () => ({}),
             remove: async ({ name }: { name?: string } = {}) => {
-                jarPairs = jarPairs.filter(pair => !pair.startsWith(`${name}=`));
+                if (!stickyCookieNames.includes(String(name))) {
+                    jarPairs = jarPairs.filter(pair => !pair.startsWith(`${name}=`));
+                }
                 return {};
             },
         },
@@ -97,6 +101,7 @@ beforeEach(() => {
     vi.resetModules();
     checkSigCalls = 0;
     jarPairs = [];
+    stickyCookieNames = [];
     fetchMock.mockReset();
     vi.stubGlobal('fetch', fetchMock);
     stubBrowser();
@@ -215,5 +220,52 @@ describe('QQ QR login after a WeChat session left cookies behind', () => {
         expect(names).not.toContain('str_musicid');
         // 传输类 cookie（ptcz / RK 这类）不该被清掉，否则会把正常的反爬指纹也一起弄丢。
         expect(names).toContain('ptcz');
+    });
+});
+
+// 现场证据（0.7.15-android.57 的报告）：qr:create:ok setCookieCount=0，随后第一次轮询就回
+// ptuiCB('65')「二维码已失效」。原因是 Set-Cookie 在安卓桥里对 JS 不可见，qrsig 只能从 cookie 罐
+// 回捞，而罐里可能是上一次扫码留下的旧值 —— 新码于是从未被服务端认过。
+describe('QQ QR create must not pick up a previous session qrsig', () => {
+    it('takes the fresh qrsig from the bridge-exposed Set-Cookie', async () => {
+        // 旧 qrsig 删不掉（域 cookie 用 host-only 删除够不着），只能靠响应头里的新值。
+        jarPairs = ['qrsig=stale-qrsig', 'uin=o8888888888'];
+        stickyCookieNames = ['qrsig'];
+        fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+            const url = String(input instanceof Request ? input.url : input);
+            if (url.includes('ptqrshow')) {
+                return new Response(new Uint8Array([1, 2, 3]), {
+                    status: 200,
+                    headers: {
+                        'content-type': 'image/png',
+                        'x-folia-set-cookie': 'qrsig=fresh-qrsig; Path=/; Domain=qq.com',
+                    },
+                });
+            }
+            if (url.includes('ptqrlogin')) {
+                return new Response("ptuiCB('66','0','','0','二维码未失效。', '')", { status: 200 });
+            }
+            return new Response('', { status: 404 });
+        });
+
+        const { bridge, trace } = await loadBridge();
+        const created = await bridge.qqGetLoginQr() as unknown as { qrsig?: string; ptqrtoken?: string };
+
+        expect(created.qrsig).toBe('fresh-qrsig');
+        expect(created.ptqrtoken).toBe(String(bridge.hash33('fresh-qrsig')));
+
+        const poll = await bridge.qqCheckLoginQr({
+            qrsig: String(created.qrsig),
+            ptqrtoken: String(created.ptqrtoken),
+        }) as unknown as { status?: string };
+        expect(poll.status).toBe('wait');
+        // 轮询必须带新码；旧码只能留在罐里，不能进请求。
+        expect(cookieHeaders()).toContain('qrsig=fresh-qrsig');
+        expect(cookieHeaders()).not.toContain('qrsig=stale-qrsig');
+
+        // 清理很快完成时不该在追踪里留下假的 timeout（计时器没清会误报）。
+        const lines = trace.getQrLoginTraceLines('qq');
+        expect(lines.some(line => line.includes('qr:clean-platform-cookies:timeout'))).toBe(false);
+        expect(lines.some(line => line.includes('qr:create:ok'))).toBe(true);
     });
 });

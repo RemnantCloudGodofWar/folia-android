@@ -247,6 +247,7 @@ const installFetchShim = (plugin: NativePlugin) => {
       responseBytes.byteOffset + responseBytes.byteLength,
     ) as ArrayBuffer;
     const responseHeaders = new Headers();
+    const exposedSetCookies: string[] = [];
     if (Array.isArray(result.headers)) {
       result.headers.forEach((entry) => {
         if (!entry?.name || entry.value == null) return;
@@ -254,6 +255,11 @@ const installFetchShim = (plugin: NativePlugin) => {
         // to keep every cookie the server sent.
         if (entry.name.toLowerCase() === 'set-cookie') {
           responseHeaders.append(entry.name, String(entry.value));
+          // ...but Set-Cookie is a forbidden response-header name, so a Response built here drops it
+          // before JS can read it. The bridge modules need those values (qrsig, p_skey, NMTID ...) and
+          // otherwise have to guess them back out of the cookie jar, where a previous session's value
+          // may still be sitting. Mirror them into a header JS is allowed to read.
+          exposedSetCookies.push(String(entry.value));
         } else {
           responseHeaders.set(entry.name, String(entry.value));
         }
@@ -263,6 +269,7 @@ const installFetchShim = (plugin: NativePlugin) => {
         if (value != null) responseHeaders.set(name, String(value));
       });
     }
+    exposedSetCookies.forEach((value) => responseHeaders.append('x-folia-set-cookie', value));
     return new Response(responseBuffer, {
       status: result.status,
       headers: responseHeaders,

@@ -1,5 +1,6 @@
 import CryptoJS from '../vendor/crypto-es.mjs';
 import { parseCookieString, getNeteaseMusicU } from './cookies.js';
+import { readRawSetCookies } from './setCookieHeaders.js';
 
 const EAPI_KEY = 'e82ckenh8dichen8';
 const EAPI_BASE = 'https://interface.music.163.com';
@@ -191,12 +192,8 @@ export async function eapiRequest(path, data, cookieHeader) {
   } catch (_) {
     body = {};
   }
-  let setCookies = [];
-  try {
-    if (resp.headers && typeof resp.headers.getSetCookie === 'function') {
-      setCookies = resp.headers.getSetCookie() || [];
-    }
-  } catch (_) {}
+  // 安卓桥把 Set-Cookie 镜像到 x-folia-set-cookie，只看 getSetCookie() 的话这里永远是空的。
+  const setCookies = readRawSetCookies(resp);
   // 服务端在第一个不带 NMTID 的 eapi 响应里下发它，后续请求必须带上。
   await rememberEapiNmtid(setCookies);
   return { status: resp.status, body, setCookies };

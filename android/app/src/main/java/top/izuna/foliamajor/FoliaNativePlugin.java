@@ -452,7 +452,15 @@ public class FoliaNativePlugin extends Plugin {
         PhoneLayoutOrientation.update(getContext(), enabled, orientation);
         Activity activity = getActivity();
         if (activity != null) {
-            activity.runOnUiThread(() -> PhoneLayoutOrientation.apply(activity));
+            activity.runOnUiThread(() -> {
+                PhoneLayoutOrientation.apply(activity);
+                // 手机适配开关同时决定是否绘制到挖孔区。
+                PhoneFitCutout.applyFromPreference(activity);
+                WebView webView = getBridge() == null ? null : getBridge().getWebView();
+                if (webView != null && AdaptiveLayout.isEnabled(getContext())) {
+                    AdaptiveLayout.apply(activity, webView, true);
+                }
+            });
         }
         JSObject result = new JSObject();
         result.put("enabled", enabled);

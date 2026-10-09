@@ -9,6 +9,11 @@ const BRIDGE_VERSION = 'android-0.1.0';
 // request open until OkHttp's own 45s read timeout, which is long enough to look like a freeze.
 // AI and image requests call the plugin directly and keep their own longer budgets.
 const BRIDGED_REQUEST_TIMEOUT_MS = 15000;
+// Cookie calls are millisecond work, but Capacitor can drop a reply (plugin exception,
+// WebView reload) and the page-side bridge request has no timer of its own. Login waits on
+// these calls, so a lost reply used to leave the QR modal parked on "waiting" after the
+// phone had already reported success. Every shim call therefore settles within a budget.
+const COOKIE_CALL_TIMEOUT_MS = 4000;
 
 const API_HOSTS = [
   'music.163.com',
@@ -145,23 +150,46 @@ const installCookieShim = (plugin: NativePlugin) => {
       },
     },
   };
+  const callPlugin = <T,>(label: string, fallback: T, run: () => Promise<T>): Promise<T> => {
+    let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+    const work = (async () => {
+      try {
+        return await run();
+      } catch (error) {
+        console.warn(`[FoliaNativeBridge] ${label} failed`, error);
+        return fallback;
+      }
+    })();
+    const deadline = new Promise<T>((resolve) => {
+      timeoutHandle = setTimeout(() => {
+        console.warn(`[FoliaNativeBridge] ${label} timed out after ${COOKIE_CALL_TIMEOUT_MS}ms`);
+        resolve(fallback);
+      }, COOKIE_CALL_TIMEOUT_MS);
+    });
+    return Promise.race([work, deadline]).finally(() => {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+    });
+  };
   chromeObject.cookies = {
-    getAll: async (details: Record<string, unknown> = {}) => {
-      const response = await plugin.cookiesGetAll(details);
-      return response.cookies || [];
-    },
-    get: async (details: Record<string, unknown>) => {
-      const response = await plugin.cookiesGet(details);
-      return response.cookie || null;
-    },
+    getAll: async (details: Record<string, unknown> = {}) => callPlugin(
+      'cookies.getAll',
+      [] as unknown[],
+      async () => (await plugin.cookiesGetAll(details)).cookies || [],
+    ),
+    get: async (details: Record<string, unknown>) => callPlugin(
+      'cookies.get',
+      null,
+      async () => (await plugin.cookiesGet(details)).cookie || null,
+    ),
     set: async (details: Record<string, unknown>) => {
-      await plugin.cookiesSet(details);
+      await callPlugin('cookies.set', { ok: false }, () => plugin.cookiesSet(details));
       return details;
     },
-    remove: async (details: Record<string, unknown>) => {
-      const response = await plugin.cookiesRemove(details);
-      return response.ok ? details : null;
-    },
+    remove: async (details: Record<string, unknown>) => callPlugin(
+      'cookies.remove',
+      null,
+      async () => ((await plugin.cookiesRemove(details)).ok ? details : null),
+    ),
   };
   chromeObject.declarativeNetRequest = {
     RuleActionType: { MODIFY_HEADERS: 'modifyHeaders' },

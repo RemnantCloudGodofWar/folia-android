@@ -53,11 +53,36 @@ export const WECHAT_CHANNEL_COOKIE_NAMES = [
   'tmeLoginType',
 ];
 
-/** 清掉微信通道写下的 cookie。QQ 扫码开始前与登录成功时都调用一次。 */
+// 收尾步骤的硬上限：宿主不回包时不能让登录停在「手机上已确认、应用没反应」。
+const COOKIE_HYGIENE_TIMEOUT_MS = 1200;
+const COOKIE_WRITE_TIMEOUT_MS = 5000;
+
+/** 给一段收尾工作加上截止时间；无论成功、失败还是超时都会结算成 fallback。 */
+function settleWithin(promise, ms, fallback, label) {
+  const work = Promise.resolve(promise).catch((err) => {
+    noteQrLoginStep(`${label}:failed`, { message: err?.message || String(err) });
+    return fallback;
+  });
+  return Promise.race([
+    work,
+    new Promise((resolve) => setTimeout(() => {
+      noteQrLoginStep(`${label}:timeout`, { ms });
+      resolve(fallback);
+    }, ms)),
+  ]);
+}
+
+/**
+ * 清掉微信通道写下的 cookie。QQ 扫码开始前与登录成功时都调用一次。
+ * 这只是通道切换的卫生工作：读不到结果也照常放行，绝不阻塞登录。
+ */
 async function clearWechatChannelCookies() {
-  for (const host of WECHAT_COOKIE_HOSTS) {
-    await removeBrowserCookies(host, WECHAT_CHANNEL_COOKIE_NAMES);
-  }
+  const cleanup = (async () => {
+    for (const host of WECHAT_COOKIE_HOSTS) {
+      await removeBrowserCookies(host, WECHAT_CHANNEL_COOKIE_NAMES);
+    }
+  })();
+  await settleWithin(cleanup, COOKIE_HYGIENE_TIMEOUT_MS, undefined, 'qr:clean-wechat-cookies');
 }
 
 export function hash33(qrsig) {
@@ -256,10 +281,22 @@ async function writeSessionCookies(session) {
   // QQ 通道登录：先清掉上一条微信通道留下的通道标记。它们留在同一个 cookie jar 里时，
   // qqCookieUin 会优先读 wxuin、comm 会带上 tmeLoginType=1，QQ 凭证就被按微信解析而拒收。
   await clearWechatChannelCookies();
-  await setBrowserCookies('https://y.qq.com/', raw);
-  await setBrowserCookies('https://qq.com/', raw);
-  await setBrowserCookies('https://graph.qq.com/', raw);
-  clearCookieCache();
+  noteQrLoginStep('qr:session:write:start', { cookieCount: raw.split(';').filter(Boolean).length });
+  // 写 jar 失败不该吞掉刚拿到的会话：调用方还会把同一串 cookie 交给 saveProviderCookie 持久化，
+  // getQQCookie() 会把存储里那份合并回来。超时同样只记一条诊断，不阻塞「已确认」的返回。
+  const written = await settleWithin(
+    (async () => {
+      await setBrowserCookies('https://y.qq.com/', raw);
+      await setBrowserCookies('https://qq.com/', raw);
+      await setBrowserCookies('https://graph.qq.com/', raw);
+      clearCookieCache();
+      return true;
+    })(),
+    COOKIE_WRITE_TIMEOUT_MS,
+    false,
+    'qr:session:write',
+  );
+  noteQrLoginStep(written ? 'qr:session:write:ok' : 'qr:session:write:skipped');
 }
 
 /** GET /user/getQQLoginQr equivalent */

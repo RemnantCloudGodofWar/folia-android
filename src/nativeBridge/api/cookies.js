@@ -272,6 +272,8 @@ export async function setBrowserCookies(baseUrl, cookieInput) {
 export async function removeBrowserCookies(baseUrl, names) {
   const list = (Array.isArray(names) ? names : [names]).filter(Boolean);
   if (!list.length || !baseUrl) return;
+  // 宿主没提供 remove 时静默跳过：清理只是登录通道切换的卫生工作，不该让登录流程失败。
+  if (!chrome?.cookies?.remove) return;
   await Promise.all(list.map(name => (
     chrome.cookies.remove({ url: baseUrl, name }).catch(() => null)
   )));

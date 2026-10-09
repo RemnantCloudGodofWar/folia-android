@@ -28,6 +28,16 @@ type NativePlugin = {
     error?: string;
     failures?: Array<{ uri?: string; message?: string }>;
   }>;
+  pickAudioFolder?: () => Promise<{
+    tracks?: NativeAudioTrack[];
+    port?: number;
+    cancelled?: boolean;
+    picked?: number;
+    copied?: number;
+    resultCode?: number;
+    error?: string;
+    failures?: Array<{ uri?: string; message?: string }>;
+  }>;
   deleteImportedAudio?: (options: { refs: string[] }) => Promise<{
     deleted?: string[];
     failed?: string[];
@@ -153,7 +163,8 @@ export const scanAndroidDeviceMusic = async (): Promise<LocalSong[]> => {
  */
 export const pickAndroidLocalMusic = async (): Promise<LocalSong[]> => {
   const plugin = getPlugin();
-  if (!plugin?.pickAudioFiles) {
+  const picker = plugin?.pickAudioFolder ?? plugin?.pickAudioFiles;
+  if (!picker) {
     noteLibraryStep('local', 'pick:no-plugin', {
       hasPlugin: Boolean(plugin),
       methods: plugin ? Object.keys(plugin).join(',') : 'none',
@@ -161,10 +172,12 @@ export const pickAndroidLocalMusic = async (): Promise<LocalSong[]> => {
     throw new Error('Android audio picker is unavailable');
   }
 
-  noteLibraryStep('local', 'pick:start');
+  noteLibraryStep('local', 'pick:start', {
+    source: plugin?.pickAudioFolder ? 'folder' : 'files',
+  });
   let response: Awaited<ReturnType<NativePlugin['pickAudioFiles']>>;
   try {
-    response = await plugin.pickAudioFiles();
+    response = await picker();
   } catch (error) {
     noteLibraryStep('local', 'pick:error', {
       message: error instanceof Error ? error.message : String(error),

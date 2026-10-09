@@ -7,6 +7,7 @@ import android.content.ContentResolver;
 import android.content.Intent;
 import android.database.Cursor;
 import android.os.Build;
+import android.provider.DocumentsContract;
 import android.provider.OpenableColumns;
 import android.provider.MediaStore;
 import android.webkit.CookieManager;
@@ -41,6 +42,7 @@ import java.net.URL;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 
 import okhttp3.Headers;
@@ -422,6 +424,19 @@ public class FoliaNativePlugin extends Plugin {
         startActivityForResult(call, intent, "handlePickedAudio");
     }
 
+    /** 选择整个文件夹；原生侧递归扫描其中的音频，用户可以一次导入整张专辑/目录。 */
+    @PluginMethod
+    public void pickAudioFolder(PluginCall call) {
+        if (isAudioPickerOpen) {
+            call.reject("Audio picker is already open");
+            return;
+        }
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        isAudioPickerOpen = true;
+        startActivityForResult(call, intent, "handlePickedAudioFolder");
+    }
+
     /** 供 WebView 重建导入音频的流地址（端口每次启动都可能不同）。 */
     @PluginMethod
     public void localAudioServerPort(PluginCall call) {
@@ -586,6 +601,66 @@ public class FoliaNativePlugin extends Plugin {
             }
         }
 
+        completePickedAudioImport(call, uris, resultCode);
+    }
+
+    @ActivityCallback
+    private void handlePickedAudioFolder(PluginCall call, ActivityResult activityResult) {
+        isAudioPickerOpen = false;
+        if (call == null) return;
+        int resultCode = activityResult == null ? Activity.RESULT_CANCELED : activityResult.getResultCode();
+        List<Uri> uris = new ArrayList<>();
+        Intent data = activityResult == null ? null : activityResult.getData();
+        Uri treeUri = data == null ? null : data.getData();
+        if (treeUri != null) {
+            try {
+                getContext().getContentResolver().takePersistableUriPermission(
+                    treeUri,
+                    data.getFlags() & Intent.FLAG_GRANT_READ_URI_PERMISSION
+                );
+            } catch (Exception ignored) {
+                // Some providers do not offer persistable grants; the current grant is still usable.
+            }
+            collectAudioDocuments(treeUri, DocumentsContract.getTreeDocumentId(treeUri), uris);
+        }
+        completePickedAudioImport(call, uris, resultCode);
+    }
+
+    private void collectAudioDocuments(Uri treeUri, String parentDocumentId, List<Uri> output) {
+        Uri childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentDocumentId);
+        String[] projection = new String[]{
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_MIME_TYPE
+        };
+        try (Cursor cursor = getContext().getContentResolver().query(childrenUri, projection, null, null, null)) {
+            if (cursor == null) return;
+            while (cursor.moveToNext()) {
+                String documentId = cursor.getString(0);
+                String displayName = cursor.getString(1);
+                String mimeType = cursor.getString(2);
+                if (DocumentsContract.Document.MIME_TYPE_DIR.equals(mimeType)) {
+                    collectAudioDocuments(treeUri, documentId, output);
+                    continue;
+                }
+                if (isAudioDocument(displayName, mimeType)) {
+                    output.add(DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId));
+                }
+            }
+        } catch (Exception ignored) {
+            // A provider can deny one subtree without invalidating the rest of the selection.
+        }
+    }
+
+    private static boolean isAudioDocument(String displayName, String mimeType) {
+        if (mimeType != null && mimeType.startsWith("audio/")) return true;
+        String lower = displayName == null ? "" : displayName.toLowerCase(Locale.ROOT);
+        return lower.endsWith(".mp3") || lower.endsWith(".flac") || lower.endsWith(".wav")
+            || lower.endsWith(".m4a") || lower.endsWith(".aac") || lower.endsWith(".ogg")
+            || lower.endsWith(".opus") || lower.endsWith(".ape") || lower.endsWith(".wma");
+    }
+
+    private void completePickedAudioImport(PluginCall call, List<Uri> uris, int resultCode) {
         if (uris.isEmpty()) {
             JSObject result = new JSObject();
             result.put("tracks", new JSArray());
@@ -599,7 +674,9 @@ public class FoliaNativePlugin extends Plugin {
             return;
         }
 
-        try {
+        final Activity activity = getActivity();
+        new Thread(() -> {
+          try {
             if (localAudioServer == null) localAudioServer = new LocalAudioServer(getContext());
             int port = localAudioServer.start();
             File directory = localAudioServer.importedAudioDirectory();
@@ -652,10 +729,14 @@ public class FoliaNativePlugin extends Plugin {
             result.put("copied", copied);
             result.put("failures", failures);
             result.put("resultCode", resultCode);
-            call.resolve(result);
-        } catch (Exception error) {
-            call.reject(error.getMessage(), error);
-        }
+            if (activity != null) activity.runOnUiThread(() -> call.resolve(result));
+            else call.resolve(result);
+          } catch (Exception error) {
+            String message = error.getMessage() == null ? error.toString() : error.getMessage();
+            if (activity != null) activity.runOnUiThread(() -> call.reject(message, error));
+            else call.reject(message, error);
+          }
+        }, "folia-audio-import").start();
     }
 
     private static String stableFileId(String displayName, long fileSize, File directory) {

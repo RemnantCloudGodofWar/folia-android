@@ -12,6 +12,7 @@ import LibrarySuiteSection from './LibrarySuiteSection';
 import PlayerBottomBarSection from './PlayerBottomBarSection';
 import AdaptiveLayoutSetting from './AdaptiveLayoutSetting';
 import AndroidImmersiveSetting from './AndroidImmersiveSetting';
+import AndroidKeepScreenOnSetting from './AndroidKeepScreenOnSetting';
 import AndroidPhoneFitSetting from './AndroidPhoneFitSetting';
 import CommandPaletteButtonSetting from './CommandPaletteButtonSetting';
 import HomeCardPositionSection from './HomeCardPositionSection';
@@ -227,6 +228,12 @@ const GeneralSettingsSubview: React.FC<GeneralSettingsSubviewProps> = ({
             />
 
             <AndroidImmersiveSetting
+                isDaylight={isDaylight}
+                settingsCardClass={settingsCardClass}
+                theme={theme}
+            />
+
+            <AndroidKeepScreenOnSetting
                 isDaylight={isDaylight}
                 settingsCardClass={settingsCardClass}
                 theme={theme}

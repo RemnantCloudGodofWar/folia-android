@@ -8,14 +8,21 @@ import {
     writeStoredAndroidPhoneFit,
     type AndroidPhoneFitOrientation,
 } from '../services/androidPhoneLayout';
+import {
+    applyKeepScreenOn,
+    readStoredKeepScreenOn,
+    writeStoredKeepScreenOn,
+} from '../services/androidKeepScreenOn';
 
 type AndroidLayoutSettingsState = {
     phoneFitEnabled: boolean;
     phoneFitOrientation: AndroidPhoneFitOrientation;
     immersiveModeEnabled: boolean;
+    keepScreenOnEnabled: boolean;
     setPhoneFitEnabled: (enabled: boolean) => void;
     setPhoneFitOrientation: (orientation: AndroidPhoneFitOrientation) => void;
     setImmersiveModeEnabled: (enabled: boolean) => void;
+    setKeepScreenOnEnabled: (enabled: boolean) => void;
 };
 
 const IMMERSIVE_STORAGE_KEY = 'folia_android_immersive_mode';
@@ -42,6 +49,7 @@ export const useAndroidLayoutSettingsStore = create<AndroidLayoutSettingsState>(
     phoneFitEnabled: readStoredAndroidPhoneFit(),
     phoneFitOrientation: readStoredAndroidPhoneFitOrientation(),
     immersiveModeEnabled: readStoredImmersiveMode(),
+    keepScreenOnEnabled: readStoredKeepScreenOn(),
     setPhoneFitEnabled: (enabled) => {
         writeStoredAndroidPhoneFit(enabled);
         applyAndroidPhoneFit(enabled, get().phoneFitOrientation);
@@ -57,5 +65,10 @@ export const useAndroidLayoutSettingsStore = create<AndroidLayoutSettingsState>(
     setImmersiveModeEnabled: (enabled) => {
         writeStoredImmersiveMode(enabled);
         set({ immersiveModeEnabled: enabled });
+    },
+    setKeepScreenOnEnabled: (enabled) => {
+        writeStoredKeepScreenOn(enabled);
+        applyKeepScreenOn(enabled);
+        set({ keepScreenOnEnabled: enabled });
     },
 }));

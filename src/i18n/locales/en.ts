@@ -1546,6 +1546,8 @@ export default {
   "immersiveMode": "Full immersive mode",
   "immersiveModeDesc": "Applies to the player view only: it auto-hides the control bar, the up-next card, the command palette button, and the right-side gear/panel button for a cleaner stage. Playlist and song browsing screens are unaffected. Turning it off restores the command palette button; if Auto hide was already on, it keeps hiding automatically.",
   "phoneFit": "Phone layout fit",
+  "keepScreenOn": "Keep screen on",
+  "keepScreenOnDesc": "Stops the screen from sleeping while the app is open, so lyrics stay readable on a stand or while you copy them. Turn it off to restore the system auto-sleep.",
   "orientationFit": "Portrait / landscape fit",
   "commandPaletteButtonSection": "Command palette button",
   "commandPaletteButtonAutoHide": "Auto hide",

@@ -1545,6 +1545,8 @@ export default {
    "immersiveMode": "全沉浸模式",
    "immersiveModeDesc": "只在播放界面生效：自动收起控制条、即将播放卡片、命令面板按钮和右侧齿轮/面板按钮，让画面更干净。浏览歌单和歌曲的界面不受影响。关闭后命令面板按钮恢复显示；若“自动隐藏命令面板按钮”本来就是打开的，则继续保持自动隐藏。",
    "phoneFit": "手机适配",
+   "keepScreenOn": "屏幕常亮",
+   "keepScreenOnDesc": "打开后不再自动息屏，看歌词、抄歌词或放在桌上时屏幕保持点亮。关掉就恢复系统的自动息屏。",
    "orientationFit": "横竖屏兼容",
    "commandPaletteButtonSection": "命令面板按钮",
    "commandPaletteButtonAutoHide": "自动隐藏",

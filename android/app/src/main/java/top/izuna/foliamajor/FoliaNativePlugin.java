@@ -11,6 +11,7 @@ import android.provider.OpenableColumns;
 import android.provider.MediaStore;
 import android.webkit.CookieManager;
 import android.webkit.WebView;
+import android.view.WindowManager;
 import android.net.Uri;
 import android.util.Base64;
 
@@ -478,6 +479,30 @@ public class FoliaNativePlugin extends Plugin {
         JSObject result = new JSObject();
         result.put("enabled", PhoneLayoutOrientation.isEnabled(getContext()));
         result.put("orientation", PhoneLayoutOrientation.getOrientation(getContext()));
+        call.resolve(result);
+    }
+
+    /**
+     * 屏幕常亮：直接操作窗口标志。
+     *
+     * 网页的 Screen Wake Lock 在页面隐藏时会被浏览器释放，而且要重新申请；窗口标志是系统级的，
+     * 切页、锁屏前都有效，所以安卓这边以它为准（JS 侧在拿不到插件时才退回 Wake Lock）。
+     */
+    @PluginMethod
+    public void setKeepScreenOn(PluginCall call) {
+        boolean enabled = Boolean.TRUE.equals(call.getBoolean("enabled", false));
+        Activity activity = getActivity();
+        if (activity != null) {
+            activity.runOnUiThread(() -> {
+                if (enabled) {
+                    activity.getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                } else {
+                    activity.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                }
+            });
+        }
+        JSObject result = new JSObject();
+        result.put("enabled", enabled);
         call.resolve(result);
     }
 

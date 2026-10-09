@@ -7,6 +7,7 @@ import { installMemorySampleFeed } from './services/debug/memorySamples';
 import { installFrameTimingDiagnostics } from './utils/frameTimingDiagnostics';
 import { installNativeAndroidBridge } from './services/nativeAndroidBridge';
 import { installAndroidPhoneFitPreference } from './services/androidPhoneLayout';
+import { installKeepScreenOnPreference } from './services/androidKeepScreenOn';
 // import { installCoverSizeAudit } from './services/debug/coverSizeSamples';
 // @ts-ignore
 globalThis.Buffer = Buffer;
@@ -29,6 +30,8 @@ installFrameTimingDiagnostics();
 // if (import.meta.env.DEV) installCoverSizeAudit();
 installGlobalVisualizerFrameRateLimiter();
 installAndroidPhoneFitPreference();
+// 屏幕常亮：启动时套用保存的开关状态（安卓走原生窗口标志）。
+installKeepScreenOnPreference();
 void installNativeAndroidBridge();
 
 void import('./bootstrap');

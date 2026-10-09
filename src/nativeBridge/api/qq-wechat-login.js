@@ -203,16 +203,28 @@ export async function qqWechatCheckLoginQr(params = {}) {
 
   try {
     const credential = await exchangeWechatCredential(status.code);
-    const musicid = String(credential.musicid || credential.str_musicid || '').replace(/\D/g, '');
-    const musickey = String(credential.musickey || '');
-    if (!musickey || !musicid) throw new Error('微信登录未拿到 musickey/musicid');
+    const musicKey = String(credential.musickey || '');
+    // 🔴 微信凭据的 musicid 是占位的 0，真正的账号 ID 只在 str_musicid 里（见 qqProvider 的同名约定）。
+    // 取错字段就会登录成功却落到一个没有歌单的账号上。
+    const strMusicId = String(credential.str_musicid ?? '').trim();
+    const rawMusicId = String(credential.musicid ?? '').trim();
+    const accountId = (strMusicId && strMusicId !== '0' ? strMusicId : '')
+      || (rawMusicId && rawMusicId !== '0' ? rawMusicId : '');
+    const musicid = accountId.replace(/\D/g, '');
+    if (!musicKey || !musicid) throw new Error('微信登录未拿到 musickey/musicid');
 
     const cookiePairs = [
+      'login_type=2',
+      // 让 wxuin 与 uin 指向同一个真账号：cookies.js 在 login_type=2 时优先读 wxuin，
+      // 其余分支读 uin，两者一致才不会分叉到别的账号。
+      `wxuin=${musicid}`,
       `uin=o${musicid}`,
       `qqmusic_uin=o${musicid}`,
-      `qm_keyst=${musickey}`,
-      `qqmusic_key=${musickey}`,
+      `qm_keyst=${musicKey}`,
+      `qqmusic_key=${musicKey}`,
+      `tmeLoginType=${WECHAT_LOGIN_TYPE}`,
     ];
+    if (accountId) cookiePairs.push(`str_musicid=${accountId}`);
     const sessionData = buildLoginSession(cookiePairs.join('; '));
     await setBrowserCookies('https://y.qq.com/', sessionData.cookie);
     await setBrowserCookies('https://qq.com/', sessionData.cookie);

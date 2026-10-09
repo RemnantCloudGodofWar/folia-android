@@ -55,6 +55,12 @@ const buildLoginModalProps = (
     features: GridLoginFeatures,
 ): LoginModalProps => {
     const { session } = view;
+    // 失败帮助与常驻诊断入口共用同一份报告生成逻辑，避免两处各写一遍。
+    const buildReport = async () => {
+        const result = await account.buildLoginDiagnosticReport();
+        if (result.status !== 'ok') throw new Error('no login session to report');
+        return result.report;
+    };
     return {
         title: view.title,
         note: view.note,
@@ -96,12 +102,21 @@ const buildLoginModalProps = (
                 failure: session.failure,
                 tips: view.failureTips,
                 selfCheck: view.selfCheck,
-                buildReport: async () => {
-                    const result = await account.buildLoginDiagnosticReport();
-                    if (result.status !== 'ok') throw new Error('no login session to report');
-                    return result.report;
-                },
+                buildReport,
             })
+            : undefined,
+        // 常驻诊断入口：二维码流程一开始就给，不必等失败。选登录方式的两步阶段还没有会话，
+        // 这时候复制只会失败，所以从「要码/加载」起才显示。失败时由 failureHelp 接管，避免重复。
+        diagnosticsEntry: features.diagnostics
+            && session.phase !== 'resolving-methods'
+            && session.phase !== 'choosing-method'
+            ? {
+                copyLabel: t('home.qrDiagnosticsCopy'),
+                copiedLabel: t('home.qrDiagnosticsCopied'),
+                copyFailedLabel: t('home.qrDiagnosticsCopyFailed'),
+                disclosure: t('home.qrDiagnosticsDisclosure'),
+                buildReport,
+            }
             : undefined,
         onRetry: () => void account.retryLogin(),
         onClose: () => void account.closeLogin(),

@@ -1152,6 +1152,10 @@ function buildQQAuthComm(cookieHeader, extra) {
   const musicKey = qqCookieMusicKey(cookieHeader);
   const comm = Object.assign({ uin, format: 'json', ct: musicKey ? 19 : 24, cv: 0, platform: 'yqq.json' }, extra || {});
   if (musicKey) comm.authst = musicKey;
+  // 微信扫码登录的凭据必须带着自己的 tmeLoginType 回来，否则上游按 QQ 通道解析会拿不到数据。
+  // 会话里没写这个 cookie 时（QQ 通道）保持原样，不引入新字段。
+  const loginType = Number(parseCookieString(cookieHeader).tmeLoginType);
+  if (Number.isFinite(loginType) && loginType > 0) comm.tmeLoginType = loginType;
   return comm;
 }
 

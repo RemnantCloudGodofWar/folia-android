@@ -1,4 +1,5 @@
-import { AlertTriangle, Check, Loader2, RotateCcw, ServerCog, X } from 'lucide-react';
+import { useState } from 'react';
+import { AlertTriangle, Check, ClipboardCopy, Loader2, RotateCcw, ServerCog, X } from 'lucide-react';
 import { motion } from 'framer-motion';
 import QrLoginFailureHelp, { type QrLoginFailureHelpProps } from './QrLoginFailureHelp';
 
@@ -30,6 +31,17 @@ type BackendFailureProps = {
     onRestart?: () => void;
 };
 
+// 常驻的诊断入口：不依赖失败状态，只要这次登录有会话就能复制报告。
+// 内容与失败帮助里的复制按钮同源（同一份报告生成函数），只是位置固定在二维码下方。
+type DiagnosticsEntryProps = {
+    copyLabel: string;
+    copiedLabel: string;
+    copyFailedLabel: string;
+    /** 报告包含哪些数据。 */
+    disclosure: string;
+    buildReport: () => Promise<string>;
+};
+
 type OnlineProviderLoginModalProps = {
     title: string;
     note: string;
@@ -42,6 +54,8 @@ type OnlineProviderLoginModalProps = {
     retryDisabled?: boolean;
     loginMethods?: LoginMethodsProps;
     backendFailure?: BackendFailureProps;
+    // 常驻诊断入口；不传就不显示。与 failureHelp 同时存在时由 failureHelp 承担复制，避免重复。
+    diagnosticsEntry?: DiagnosticsEntryProps;
     // 只在扫码登录失败时传入（含后端没拉起来），显示在二维码旁边。
     failureHelp?: QrLoginFailureHelpProps;
     onRetry: () => void;
@@ -59,10 +73,30 @@ const OnlineProviderLoginModal = ({
     retryDisabled = false,
     loginMethods,
     backendFailure,
+    diagnosticsEntry,
     failureHelp,
     onRetry,
     onClose,
 }: OnlineProviderLoginModalProps) => {
+    const [diagCopyState, setDiagCopyState] = useState<'idle' | 'working' | 'copied' | 'failed'>('idle');
+    const copyDiagnostics = async () => {
+        if (!diagnosticsEntry) return;
+        setDiagCopyState('working');
+        try {
+            await navigator.clipboard.writeText(await diagnosticsEntry.buildReport());
+            setDiagCopyState('copied');
+        } catch (error) {
+            console.warn('[ProviderQrLogin] diagnostics:copy-failed', error);
+            setDiagCopyState('failed');
+        }
+    };
+    const diagCopyText = diagCopyState === 'copied'
+        ? diagnosticsEntry?.copiedLabel
+        : diagCopyState === 'failed'
+            ? diagnosticsEntry?.copyFailedLabel
+            : diagnosticsEntry?.copyLabel;
+    const DiagCopyIcon = diagCopyState === 'working' ? Loader2 : diagCopyState === 'copied' ? Check : ClipboardCopy;
+
     // 步骤一：还没选登录方式，二维码区显示占位框，且不会向后端发出任何请求。
     const awaitingMethod = Boolean(loginMethods) && loginMethods?.selectedId == null;
     // 后端故障优先于其余所有状态：这时候刷新二维码没有意义。
@@ -184,6 +218,24 @@ const OnlineProviderLoginModal = ({
                                 <RotateCcw size={13} />
                                 {retryLabel}
                             </button>
+                        )}
+                        {/* 常驻诊断入口：失败时由右侧 failureHelp 承担，这里只在正常状态下显示。 */}
+                        {diagnosticsEntry && !failureHelp && (
+                            <div className="mt-4 w-full border-t border-white/10 pt-3 text-left" data-qr-diagnostics-entry>
+                                <button
+                                    type="button"
+                                    onClick={() => void copyDiagnostics()}
+                                    disabled={diagCopyState === 'working'}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/15 text-[11px] font-semibold transition-colors disabled:opacity-50 disabled:cursor-default"
+                                    style={{ color: 'var(--text-primary)' }}
+                                >
+                                    <DiagCopyIcon size={12} className={diagCopyState === 'working' ? 'animate-spin' : undefined} />
+                                    {diagCopyText}
+                                </button>
+                                <p className="mt-1.5 text-[10px] leading-snug opacity-45" style={{ color: 'var(--text-secondary)' }}>
+                                    {diagnosticsEntry.disclosure}
+                                </p>
+                            </div>
                         )}
                     </div>
                     {/* 右栏：失败帮助。后端没拉起来时同样给：重启解决不了时，报告里有拉起的每一步与错误原文。 */}

@@ -43,10 +43,38 @@ export const createAudioEffectChain = ({
     const wow = createWowBranch(context, nodes);
     let lastDrive = -1;
     let lastCrush = -1;
+    let bypassed = false;
+
+    const safeDisconnect = (from: AudioNode, to: AudioNode) => {
+        try {
+            from.disconnect(to);
+        } catch {
+            // The edge may already be gone after a previous bypass or branch teardown.
+        }
+    };
+
+    const setBypassed = (nextBypassed: boolean) => {
+        if (nextBypassed === bypassed) return;
+        if (nextBypassed) {
+            safeDisconnect(input, nodes.highpass);
+            safeDisconnect(nodes.dry, output);
+            safeDisconnect(nodes.wet, output);
+            safeDisconnect(nodes.noiseGain, output);
+            input.connect(output);
+        } else {
+            safeDisconnect(input, output);
+            input.connect(nodes.highpass);
+            nodes.dry.connect(output);
+            nodes.wet.connect(output);
+            nodes.noiseGain.connect(output);
+        }
+        bypassed = nextBypassed;
+    };
 
     // Maps normalized settings onto every stage; a disabled chain falls back to the neutral set.
     const apply = (nextEffects: AudioEffectSettings, nextEnabled: boolean) => {
         const active = nextEnabled ? normalizeAudioEffects(nextEffects) : DEFAULT_AUDIO_EFFECT_SETTINGS;
+        setBypassed(!nextEnabled);
 
         rampParam(context, nodes.highpass.frequency, active.highpass);
         rampParam(context, nodes.lowpass.frequency, Math.min(active.lowpass, context.sampleRate * 0.475));
@@ -84,6 +112,7 @@ export const createAudioEffectChain = ({
     return {
         apply,
         dispose: () => {
+            if (bypassed) safeDisconnect(input, output);
             wow.dispose();
             noise.dispose();
             reverb.dispose();

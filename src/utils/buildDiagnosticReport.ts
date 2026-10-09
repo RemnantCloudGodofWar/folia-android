@@ -100,7 +100,8 @@ const readPlaybackContinuityLines = (): string[] => {
             + ` outputLatency=${formatSeconds(continuity.audioContextOutputLatencySec)}`,
         `  output settings: quality=${audioSettings.audioQuality} replayGain=${playback.replayGainMode}`
             + ` fade=${audioSettings.playbackFadeEnabled ? 'on' : 'off'}`,
-        `  effects: enabled=${equalizer.enabled ? 'yes' : 'no'} noise=${effects.noise} crush=${effects.crush}`
+        `  effects: enabled=${equalizer.enabled ? 'yes' : 'no'} path=${equalizer.enabled ? 'processed' : 'bypassed'}`
+            + ` noise=${effects.noise} crush=${effects.crush}`
             + ` drive=${effects.drive} wow=${effects.wow} punch=${effects.punch}`,
     ];
 };

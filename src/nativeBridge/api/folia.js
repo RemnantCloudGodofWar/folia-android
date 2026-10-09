@@ -322,6 +322,7 @@ async function handleSongUrlV1(url, cookie) {
   if (!ids.length) return { code: 200, data: [] };
   const data = await Promise.all(ids.map(async (id) => {
     const result = await handleSongUrl(id, cookie, level);
+    const format = String(result?.format || (/^(lossless|hires|jymaster)$/.test(String(result?.level || level)) ? 'flac' : 'mp3'));
     return {
       id,
       url: result?.url || null,
@@ -330,7 +331,7 @@ async function handleSongUrlV1(url, cookie) {
       md5: null,
       code: result?.url ? 200 : 404,
       expi: 1200,
-      type: 'mp3',
+      type: format,
       gain: 0,
       peak: 0,
       fee: 0,
@@ -340,7 +341,7 @@ async function handleSongUrlV1(url, cookie) {
       canExtend: false,
       freeTrialInfo: result?.trial ? { start: 0, end: 0 } : null,
       level: result?.level || level,
-      encodeType: 'mp3',
+      encodeType: format,
       channelLayout: null,
       freeTrialPrivilege: result?.restriction ? { resConsumable: false, userConsumable: false } : null,
       freeTimeTrialPrivilege: null,

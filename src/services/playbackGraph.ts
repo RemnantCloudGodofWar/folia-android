@@ -101,7 +101,8 @@ export const buildPlaybackGraph = ({
     // volume control and the bit crush has gone back to tracking it.
     console.log(
         '[AudioContext] graph: decks -> mix -> equaliser -> effects -> volume -> fade -> analyser -> out'
-        + ` (equaliser ${settings.enabled ? 'on' : 'flat'},`
+        + ` (equaliser ${settings.enabled ? 'on' : 'bypassed'},`
+        + ` effects ${settings.enabled ? 'on' : 'bypassed'},`
         + ` noise ${settings.effects.noise}, crush ${settings.effects.crush}, punch ${settings.effects.punch})`,
     );
 

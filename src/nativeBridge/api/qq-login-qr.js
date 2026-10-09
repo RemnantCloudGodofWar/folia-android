@@ -14,7 +14,7 @@
  */
 
 import { UA } from './weapi.js';
-import { clearCookieCache, setBrowserCookies } from './cookies.js';
+import { clearCookieCache, removeBrowserCookies, setBrowserCookies } from './cookies.js';
 import { noteQrLoginStep, resetQrLoginTrace } from './qrLoginTrace.js';
 
 const QQ_PT_APPID = '716027609';
@@ -40,6 +40,25 @@ const retryableCheckFailure = (message, error, extra = {}) => ({
 
 const DNR_COOKIE_RULE_ID = 917027609;
 let dnrCookieSerial = 0;
+
+// 微信扫码通道写下的 cookie 名。QQ 登录前必须先清掉，否则会被误判成微信通道。
+const WECHAT_COOKIE_HOSTS = ['https://y.qq.com/', 'https://qq.com/', 'https://graph.qq.com/'];
+export const WECHAT_CHANNEL_COOKIE_NAMES = [
+  'login_type',
+  'wxuin',
+  'wxopenid',
+  'wxskey',
+  'wxrefresh_token',
+  'str_musicid',
+  'tmeLoginType',
+];
+
+/** 清掉微信通道写下的 cookie。QQ 扫码开始前与登录成功时都调用一次。 */
+async function clearWechatChannelCookies() {
+  for (const host of WECHAT_COOKIE_HOSTS) {
+    await removeBrowserCookies(host, WECHAT_CHANNEL_COOKIE_NAMES);
+  }
+}
 
 export function hash33(qrsig) {
   let e = 0;
@@ -234,6 +253,9 @@ export async function fetchWithTimeout(input, init = {}, timeout = 10000) {
 async function writeSessionCookies(session) {
   const raw = (session && session.cookie) || '';
   if (!raw) return;
+  // QQ 通道登录：先清掉上一条微信通道留下的通道标记。它们留在同一个 cookie jar 里时，
+  // qqCookieUin 会优先读 wxuin、comm 会带上 tmeLoginType=1，QQ 凭证就被按微信解析而拒收。
+  await clearWechatChannelCookies();
   await setBrowserCookies('https://y.qq.com/', raw);
   await setBrowserCookies('https://qq.com/', raw);
   await setBrowserCookies('https://graph.qq.com/', raw);
@@ -244,6 +266,8 @@ async function writeSessionCookies(session) {
 export async function qqGetLoginQr() {
   resetQrLoginTrace();
   noteQrLoginStep('qr:create:start');
+  // 开始一次 QQ 扫码就把微信通道的残留清掉：它会让后续的 login_status / 歌单请求被按微信解析。
+  await clearWechatChannelCookies().catch(() => undefined);
   const u = new URL('https://ssl.ptlogin2.qq.com/ptqrshow');
   u.searchParams.set('appid', QQ_PT_APPID);
   u.searchParams.set('e', '2');

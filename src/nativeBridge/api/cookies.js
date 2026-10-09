@@ -263,6 +263,21 @@ export async function setBrowserCookies(baseUrl, cookieInput) {
   clearCookieCache();
 }
 
+/**
+ * 删除指定域下的若干 cookie。
+ *
+ * 用于登录通道之间清理残留：微信扫码会写下 login_type / wxuin / tmeLoginType，
+ * 它们留在同一个 cookie jar 里，切回 QQ 登录时会被当成微信通道解析，导致 QQ 凭证被上游拒收。
+ */
+export async function removeBrowserCookies(baseUrl, names) {
+  const list = (Array.isArray(names) ? names : [names]).filter(Boolean);
+  if (!list.length || !baseUrl) return;
+  await Promise.all(list.map(name => (
+    chrome.cookies.remove({ url: baseUrl, name }).catch(() => null)
+  )));
+  clearCookieCache();
+}
+
 export function hasNeteaseLogin(cookieHeader) {
   const obj = parseCookieString(cookieHeader);
   return !!(obj.MUSIC_U || obj.MUSIC_A || obj.__csrf);

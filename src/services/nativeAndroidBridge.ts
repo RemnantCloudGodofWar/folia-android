@@ -19,6 +19,9 @@ const API_HOSTS = [
   'ssl.ptlogin2.qq.com',
   'xui.ptlogin2.qq.com',
   'graph.qq.com',
+  // 微信扫码通道：qrconnect 取 uuid、qrcode 取图、lp 长轮询都在 weixin.qq.com 下。
+  // 这三个请求同样只有走原生代理才能绕开 CORS，漏掉就会是 "Failed to fetch"。
+  'weixin.qq.com',
   // KuGou spreads its API over many hosts (songsearch, complexsearch, trackercdn, vip, ...) and the
   // set keeps moving, so match the whole domain instead of listing hosts one by one. Only requests
   // that stay inside the WebView are subject to CORS; anything the bridge calls has to be proxied

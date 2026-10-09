@@ -20,6 +20,7 @@ import {
     loadProviderAccountSnapshot,
     saveProviderAccountSnapshot,
 } from '../services/onlineMusic/providerAccountCache';
+import { confirmNeteaseSessionLoss } from '../services/onlineMusic/neteaseSessionLoss';
 import { setStatusMessage as setStatusMsg } from '../stores/useStatusMessageStore';
 
 type StatusSetter = Dispatch<SetStateAction<StatusMessage | null>>;
@@ -123,59 +124,68 @@ export function useNeteaseLibrary({
             freshness: 'refreshing',
             error: undefined,
         });
+        /** 账号资料与歌单的写回：只有在确认登录有效之后才走这一段。 */
+        const applyProfile = async (profile: ProviderUser) => {
+            setUser(profile);
+
+            const targetUid = uid ?? profile.id;
+            const allPlaylists = await getAllUserPlaylists(targetUid);
+            setPlaylists(allPlaylists);
+            let nextCloudPlaylist = retainedAccount?.collections.find(collection => collection.type === 'cloud') || null;
+            let nextLikedSongIds = retainedAccount?.likedSongIds || [];
+
+            try {
+                nextCloudPlaylist = await getUserCloudPlaylist(profile, t);
+                setCloudPlaylist(nextCloudPlaylist);
+            } catch (error) {
+                console.warn('Failed to fetch user cloud playlist', error);
+            }
+
+            try {
+                const ids = await omni.getProviderLikedSongIds('netease', targetUid);
+                if (ids) {
+                    nextLikedSongIds = ids;
+                    setLikedSongIds(new Set(ids));
+                }
+            } catch (error) {
+                console.warn('Failed to fetch liked songs', error);
+            }
+
+            const collections = [...allPlaylists, ...(nextCloudPlaylist ? [nextCloudPlaylist] : [])];
+            const snapshot = await saveProviderAccountSnapshot('netease', {
+                user: profile,
+                collections,
+                likedSongIds: nextLikedSongIds,
+            });
+            updateProviderAccount('netease', {
+                status: 'authenticated',
+                user: profile,
+                collections,
+                likedSongIds: nextLikedSongIds,
+                hydration: 'ready',
+                freshness: 'fresh',
+                lastUpdatedAt: snapshot.savedAt,
+                error: undefined,
+            });
+
+            return true;
+        };
         try {
             const profile = await omni.getLoginStatus('netease');
-            if (profile) {
-                setUser(profile);
+            if (profile) return await applyProfile(profile);
 
-                const targetUid = uid ?? profile.id;
-                const allPlaylists = await getAllUserPlaylists(targetUid);
-                setPlaylists(allPlaylists);
-                let nextCloudPlaylist = retainedAccount?.collections.find(collection => collection.type === 'cloud') || null;
-                let nextLikedSongIds = retainedAccount?.likedSongIds || [];
-
-                try {
-                    nextCloudPlaylist = await getUserCloudPlaylist(profile, t);
-                    setCloudPlaylist(nextCloudPlaylist);
-                } catch (error) {
-                    console.warn('Failed to fetch user cloud playlist', error);
-                }
-
-                try {
-                    const ids = await omni.getProviderLikedSongIds('netease', targetUid);
-                    if (ids) {
-                        nextLikedSongIds = ids;
-                        setLikedSongIds(new Set(ids));
-                    }
-                } catch (error) {
-                    console.warn('Failed to fetch liked songs', error);
-                }
-
-                const collections = [...allPlaylists, ...(nextCloudPlaylist ? [nextCloudPlaylist] : [])];
-                const snapshot = await saveProviderAccountSnapshot('netease', {
-                    user: profile,
-                    collections,
-                    likedSongIds: nextLikedSongIds,
-                });
-                updateProviderAccount('netease', {
-                    status: 'authenticated',
-                    user: profile,
-                    collections,
-                    likedSongIds: nextLikedSongIds,
-                    hydration: 'ready',
-                    freshness: 'fresh',
-                    lastUpdatedAt: snapshot.savedAt,
-                    error: undefined,
-                });
-
-                return true;
-            }
+            // 一次没拿到 profile 不足以判定掉登录（EAPI 抖动、空 data、请求没带凭据都会落到这里），
+            // 而清会话要用户重新扫码——确认一次再说，别把偶发失败当成「退出登录」。
+            const confirmed = await confirmNeteaseSessionLoss(() => omni.getLoginStatus('netease'));
+            if (confirmed) return await applyProfile(confirmed);
 
             lastRefreshAuthExpiredRef.current = true;
             await clearAuthState();
         } catch (error) {
             console.log('Not logged in, session expired, or offline');
             if (error instanceof Error && error.message === 'NETEASE_AUTH_EXPIRED') {
+                const confirmed = await confirmNeteaseSessionLoss(() => omni.getLoginStatus('netease'));
+                if (confirmed) return await applyProfile(confirmed);
                 lastRefreshAuthExpiredRef.current = true;
                 await clearAuthState();
             } else {

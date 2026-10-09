@@ -1571,6 +1571,8 @@ async function kgFetchText(url, opts) {
       Accept: 'application/json, text/plain, */*',
     }, opts.headers || {}),
     body: opts.body,
+    // 长轮询端点要单独放宽安卓桥的 15 秒上限（见 nativeAndroidBridge 的 foliaTimeoutMs）。
+    ...(Number(opts.timeoutMs) > 0 ? { foliaTimeoutMs: Number(opts.timeoutMs) } : {}),
   });
   return resp.text();
 }
@@ -4264,7 +4266,7 @@ export async function handleKGSongComments(hash, albumAudioId, limit, page) {
   }
 }
 
-async function kgFetchWebSignedGet(baseURL, urlPath, extraParams) {
+async function kgFetchWebSignedGet(baseURL, urlPath, extraParams, fetchOptions) {
   const mid = await getKGMid('');
   const clienttime = Math.floor(Date.now() / 1000);
   const params = Object.assign({
@@ -4279,13 +4281,13 @@ async function kgFetchWebSignedGet(baseURL, urlPath, extraParams) {
     .map((key) => `${encodeURIComponent(key)}=${encodeURIComponent(params[key])}`)
     .join('&');
   const url = `${String(baseURL || '').replace(/\/$/, '')}${urlPath.startsWith('/') ? urlPath : `/${urlPath}`}?${qs}`;
-  return kgFetchJSON(url, {
+  return kgFetchJSON(url, Object.assign({
     referer: 'https://www.kugou.com/',
     headers: {
       'User-Agent': KG_UA_PC,
       Accept: 'application/json, text/plain, */*',
     },
-  });
+  }, fetchOptions || {}));
 }
 
 function kgBytesToBase64(bytes) {
@@ -4357,15 +4359,49 @@ export async function handleKGLoginQrCreate(key) {
  * KuGouMusicApi `/login/qr/check`
  * status: 0 过期, 1 等待扫码, 2 待确认, 4 成功(返回 token)
  */
+// 这个端点本身就是长轮询（服务端挂到状态变化才回），桥默认的 15 秒会把「还没扫码」误判成网络失败。
+const KG_QR_CHECK_TIMEOUT_MS = 45000;
+const KG_QR_CHECK_MAX_CONSECUTIVE_TIMEOUTS = 3;
+const kgQrCheckTimeouts = new Map();
+
+/**
+ * 长轮询超时说明服务端还没等到状态变化：连续几次以内按「等待扫码」返回，让前端接着轮询；
+ * 连续超时到上限才当成真失败（否则一次网络抖动就把整个扫码会话判死，用户只能重新扫码）。
+ */
+export const resolveKgQrTimeoutAsWaiting = (
+  consecutiveTimeouts,
+  maxTimeouts = KG_QR_CHECK_MAX_CONSECUTIVE_TIMEOUTS,
+) => Number(consecutiveTimeouts) < maxTimeouts;
+
 export async function handleKGLoginQrCheck(key) {
   key = String(key || '').trim();
   if (!key) return { provider: 'kg', status: 0, code: 0, message: '缺少二维码 key' };
-  const body = await kgFetchWebSignedGet('https://login-user.kugou.com', '/v2/get_userinfo_qrcode', {
-    plat: 4,
-    appid: KG_ANDROID_APPID,
-    srcappid: KG_SRCAPPID,
-    qrcode: key,
-  });
+  let body;
+  try {
+    body = await kgFetchWebSignedGet('https://login-user.kugou.com', '/v2/get_userinfo_qrcode', {
+      plat: 4,
+      appid: KG_ANDROID_APPID,
+      srcappid: KG_SRCAPPID,
+      qrcode: key,
+    }, { timeoutMs: KG_QR_CHECK_TIMEOUT_MS });
+    kgQrCheckTimeouts.delete(key);
+  } catch (error) {
+    const attempts = (kgQrCheckTimeouts.get(key) || 0) + 1;
+    kgQrCheckTimeouts.set(key, attempts);
+    if (!resolveKgQrTimeoutAsWaiting(attempts)) {
+      kgQrCheckTimeouts.delete(key);
+      throw error;
+    }
+    noteLibraryStep('kugou', 'qr:check:timeout', { attempts, retryAsWaiting: true });
+    return {
+      provider: 'kg',
+      status: 1,
+      code: 1,
+      message: '请用酷狗 App 扫码',
+      loggedIn: false,
+      timedOut: true,
+    };
+  }
   const data = (body && body.data) || {};
   const status = Number(data.status != null ? data.status : body && body.status) || 0;
   const message = status === 0 ? '二维码已过期，请刷新'

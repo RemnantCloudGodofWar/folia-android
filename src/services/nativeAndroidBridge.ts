@@ -9,6 +9,9 @@ const BRIDGE_VERSION = 'android-0.1.0';
 // request open until OkHttp's own 45s read timeout, which is long enough to look like a freeze.
 // AI and image requests call the plugin directly and keep their own longer budgets.
 const BRIDGED_REQUEST_TIMEOUT_MS = 15000;
+// 长轮询端点（酷狗扫码状态）会一直挂到状态变化，15 秒必然被误杀：调用方可以在 fetch init 上
+// 传 `foliaTimeoutMs` 单独放宽（只从我们自己的桥模块传，普通请求仍是 15 秒）。
+const BRIDGED_REQUEST_MAX_TIMEOUT_MS = 120000;
 // Cookie calls are millisecond work, but Capacitor can drop a reply (plugin exception,
 // WebView reload) and the page-side bridge request has no timer of its own. Login waits on
 // these calls, so a lost reply used to leave the QR modal parked on "waiting" after the
@@ -234,6 +237,12 @@ const installFetchShim = (plugin: NativePlugin) => {
     }
 
     let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+    const requestedTimeoutMs = Number(
+      (init as (RequestInit & { foliaTimeoutMs?: number }) | undefined)?.foliaTimeoutMs,
+    );
+    const bridgeTimeoutMs = Number.isFinite(requestedTimeoutMs) && requestedTimeoutMs > 0
+      ? Math.min(requestedTimeoutMs, BRIDGED_REQUEST_MAX_TIMEOUT_MS)
+      : BRIDGED_REQUEST_TIMEOUT_MS;
     const result = await Promise.race([
       plugin.httpRequest({
         url: rawUrl,
@@ -242,11 +251,12 @@ const installFetchShim = (plugin: NativePlugin) => {
         bodyText: serialized.bodyText || '',
         bodyBase64: serialized.bodyBase64 || '',
         redirect: init?.redirect || request?.redirect || 'follow',
+        timeoutMs: bridgeTimeoutMs,
       }),
       new Promise<never>((_resolve, reject) => {
         timeoutHandle = setTimeout(
-          () => reject(new Error(`Bridged request timed out after ${BRIDGED_REQUEST_TIMEOUT_MS}ms: ${method} ${rawUrl}`)),
-          BRIDGED_REQUEST_TIMEOUT_MS,
+          () => reject(new Error(`Bridged request timed out after ${bridgeTimeoutMs}ms: ${method} ${rawUrl}`)),
+          bridgeTimeoutMs,
         );
       }),
     ]).finally(() => {

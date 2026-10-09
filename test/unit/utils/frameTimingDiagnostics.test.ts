@@ -5,6 +5,8 @@ import {
     describeCpuIndex,
     describeDeviceClass,
     estimateRefreshRateHz,
+    noteFrameSample,
+    noteMotionActivity,
     readFrameTimingSnapshot,
     resetFrameTimingDiagnostics,
     runCpuProbe,
@@ -119,6 +121,29 @@ describe('frameTimingDiagnostics', () => {
         expect(summary.blockingMs).toBe(70);
         expect(summary.scriptMs).toBe(0);
         expect(summary.invoker).toBe('');
+    });
+
+    // 「日常播放不卡、一移动就掉帧」：移动中的帧要单独统计，否则会被整体分位数稀释掉。
+    it('separates frames recorded while the user is moving', () => {
+        let clock = 1000;
+        vi.spyOn(performance, 'now').mockImplementation(() => clock);
+        resetFrameTimingDiagnostics();
+
+        noteFrameSample(16.7, 1000);
+        noteFrameSample(16.7, 1017);
+
+        noteMotionActivity();          // 开始滑动：窗口持续到 clock + 250ms
+        noteFrameSample(16.7, 1034);
+        noteFrameSample(70, 1104);     // 滑动过程中掉了一帧
+
+        clock = 2000;                  // 窗口已过期，这一帧只进整体统计
+        noteFrameSample(16.7, 2000);
+
+        const snapshot = readFrameTimingSnapshot();
+        expect(snapshot.motion.count).toBe(2);
+        expect(snapshot.motion.jankCount).toBe(1);
+        expect(snapshot.motion.stats.maxMs).toBe(70);
+        expect(snapshot.stats.count).toBe(5);
     });
 
     it('reports an uninstalled sampler without throwing off the browser', () => {

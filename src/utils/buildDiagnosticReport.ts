@@ -153,6 +153,14 @@ const readFrameTimingLines = (): string[] => {
         `  fps: recent-second=${fps(frames.recentSecondFps)} worst-second=${fps(frames.worstSecondFps)}`,
         `  frame time: p50=${percent(stats.p50Ms)} p90=${percent(stats.p90Ms)} p95=${percent(stats.p95Ms)}`
             + ` p99=${percent(stats.p99Ms)} max=${percent(stats.maxMs)}`,
+        // 「日常播放不卡、一移动就掉帧」：移动中的帧单独一行，直接和上面的整体分位数对比。
+        `  motion frames (scroll/touch): count=${frames.motion.count}`
+            + ` p50=${percent(frames.motion.stats.p50Ms)}`
+            + ` p95=${percent(frames.motion.stats.p95Ms)}`
+            + ` max=${percent(frames.motion.stats.maxMs)}`
+            + ` slow>32ms=${frames.motion.slowCount}`
+            + ` jank>50ms=${frames.motion.jankCount}`
+            + ` freeze>100ms=${frames.motion.freezeCount}`,
         `  dropped frames: slow>32ms=${stats.slowCount} (${ratio(stats.slowCount)})`
             + ` jank>50ms=${stats.jankCount} (${ratio(stats.jankCount)}) freeze>100ms=${stats.freezeCount}`,
         `  session totals: slow=${frames.sessionSlowCount} jank=${frames.sessionJankCount}`

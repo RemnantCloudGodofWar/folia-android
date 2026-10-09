@@ -19,6 +19,9 @@ const MAX_RECORDED_INTERVAL_MS = 5000;
 const INTERVAL_CAPACITY = 4096;
 const LONG_TASK_THRESHOLD_MS = 50;
 const LONG_ANIMATION_FRAME_THRESHOLD_MS = 50;
+/** 触摸/滚动结束后仍算「移动中」的余量：一次滑动收尾的那几帧同样是用户看到的掉帧。 */
+const MOTION_WINDOW_MS = 250;
+const MOTION_INTERVAL_CAPACITY = 2048;
 
 export type FrameStats = {
     count: number;
@@ -57,6 +60,15 @@ export type LongAnimationFrameStats = {
     worstInvoker: string;
 };
 
+/** 移动中（滚动 / 触摸拖动）的帧统计：和整体统计分开看，才分得清「日常播放卡」还是「一动就卡」。 */
+export type MotionFrameStats = {
+    count: number;
+    stats: FrameStats;
+    slowCount: number;
+    jankCount: number;
+    freezeCount: number;
+};
+
 type LongAnimationFrameEntryLike = {
     duration?: number;
     blockingDuration?: number;
@@ -93,6 +105,7 @@ export type FrameTimingSnapshot = {
     deviceClass: 'low' | 'mid' | 'high' | 'unknown';
     longTasks: LongTaskStats;
     longAnimationFrames: LongAnimationFrameStats;
+    motion: MotionFrameStats;
     renderHealth: FrameRenderHealth;
 };
 
@@ -166,6 +179,15 @@ const intervalBuffer = new Float64Array(INTERVAL_CAPACITY);
 let intervalCursor = 0;
 let intervalCount = 0;
 
+const motionBuffer = new Float64Array(MOTION_INTERVAL_CAPACITY);
+let motionCursor = 0;
+let motionIntervalCount = 0;
+let motionSlowCount = 0;
+let motionJankCount = 0;
+let motionFreezeCount = 0;
+let motionUntilMs = 0;
+let motionListener: (() => void) | null = null;
+
 let installed = false;
 let frameLoopHandle: number | null = null;
 let visibilityListener: (() => void) | null = null;
@@ -210,6 +232,25 @@ const readIntervals = (): number[] => {
     }
     return out;
 };
+
+const readMotionIntervals = (): number[] => {
+    const out = new Array<number>(motionIntervalCount);
+    const start = (motionCursor - motionIntervalCount + MOTION_INTERVAL_CAPACITY) % MOTION_INTERVAL_CAPACITY;
+    for (let index = 0; index < motionIntervalCount; index += 1) {
+        out[index] = motionBuffer[(start + index) % MOTION_INTERVAL_CAPACITY];
+    }
+    return out;
+};
+
+/**
+ * 触摸拖动 / 滚动开始。接下来 MOTION_WINDOW_MS 内的帧会单独统计：
+ * 「日常播放不卡、一移动就掉帧」这种反馈只有把这段拆出来才看得见。
+ */
+export const noteMotionActivity = (): void => {
+    motionUntilMs = nowMs() + MOTION_WINDOW_MS;
+};
+
+const isMotionActive = (atMs: number): boolean => atMs <= motionUntilMs;
 
 /** 分位数取「最近的样本序号」，样本少时也能给出可用的 p95 而不是 null。 */
 const percentileOf = (sorted: number[], fraction: number): number | null => {
@@ -358,6 +399,14 @@ const recordInterval = (intervalMs: number, timestamp: number): void => {
     if (!(intervalMs > 0) || intervalMs > MAX_RECORDED_INTERVAL_MS) return;
     if (insideProbeWindow(timestamp)) return;
     pushInterval(intervalMs);
+    if (isMotionActive(timestamp)) {
+        motionBuffer[motionCursor] = intervalMs;
+        motionCursor = (motionCursor + 1) % MOTION_INTERVAL_CAPACITY;
+        if (motionIntervalCount < MOTION_INTERVAL_CAPACITY) motionIntervalCount += 1;
+        if (intervalMs > SLOW_FRAME_MS) motionSlowCount += 1;
+        if (intervalMs > JANK_FRAME_MS) motionJankCount += 1;
+        if (intervalMs > FREEZE_FRAME_MS) motionFreezeCount += 1;
+    }
     if (intervalMs > SLOW_FRAME_MS) sessionSlowCount += 1;
     if (intervalMs > JANK_FRAME_MS) sessionJankCount += 1;
     if (intervalMs > FREEZE_FRAME_MS) {
@@ -377,6 +426,11 @@ const recordInterval = (intervalMs: number, timestamp: number): void => {
         bucketStartedAt = timestamp;
         bucketFrames = 0;
     }
+};
+
+/** 一帧的间隔进统计（rAF 循环内部走的就是这里；测试也用它喂样本）。 */
+export const noteFrameSample = (intervalMs: number, timestampMs: number): void => {
+    recordInterval(intervalMs, timestampMs);
 };
 
 const nativeRequestAnimationFrame = (callback: FrameRequestCallback): number => {
@@ -406,7 +460,7 @@ const onFrame = (timestamp: number): void => {
     if (lastTickAtMs !== null) visibleMs += Math.max(0, tickAtMs - lastTickAtMs);
     lastTickAtMs = tickAtMs;
     frameCount += 1;
-    if (lastFrameAt !== null) recordInterval(timestamp - lastFrameAt, timestamp);
+    if (lastFrameAt !== null) noteFrameSample(timestamp - lastFrameAt, timestamp);
     lastFrameAt = timestamp;
     frameLoopHandle = nativeRequestAnimationFrame(onFrame);
 };
@@ -510,6 +564,10 @@ export const installFrameTimingDiagnostics = (): void => {
     if (typeof document !== 'undefined') {
         visibilityListener = onVisibilityChange;
         document.addEventListener('visibilitychange', visibilityListener);
+        // 捕获阶段监听：列表、3D 网格这些内部滚动容器的 scroll 事件也会冒到这里。
+        motionListener = noteMotionActivity;
+        document.addEventListener('scroll', motionListener, { capture: true, passive: true });
+        document.addEventListener('touchmove', motionListener, { capture: true, passive: true });
     }
 };
 
@@ -520,9 +578,20 @@ export const resetFrameTimingDiagnostics = (): void => {
         document.removeEventListener('visibilitychange', visibilityListener);
     }
     visibilityListener = null;
+    if (motionListener && typeof document !== 'undefined') {
+        document.removeEventListener('scroll', motionListener, { capture: true } as EventListenerOptions);
+        document.removeEventListener('touchmove', motionListener, { capture: true } as EventListenerOptions);
+    }
+    motionListener = null;
     installed = false;
     intervalCursor = 0;
     intervalCount = 0;
+    motionCursor = 0;
+    motionIntervalCount = 0;
+    motionSlowCount = 0;
+    motionJankCount = 0;
+    motionFreezeCount = 0;
+    motionUntilMs = 0;
     lastFrameAt = null;
     lastTickAtMs = null;
     hiddenSinceMs = null;
@@ -572,6 +641,13 @@ export const readFrameTimingSnapshot = (): FrameTimingSnapshot => {
         deviceClass: describeDeviceClass(cores, memoryGb),
         longTasks,
         longAnimationFrames,
+        motion: {
+            count: motionIntervalCount,
+            stats: computeFrameStats(readMotionIntervals()),
+            slowCount: motionSlowCount,
+            jankCount: motionJankCount,
+            freezeCount: motionFreezeCount,
+        },
         renderHealth: classifyRenderHealth(stats, refreshHz),
     };
 };

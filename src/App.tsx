@@ -109,6 +109,8 @@ import { resolveCommandPaletteSearchSource, resolveSearchSource, useSearchNaviga
 import { useOnlineProviderAccountStore } from './stores/useOnlineProviderAccountStore';
 import { useShallow } from 'zustand/react/shallow';
 import { clampMediaVolume, toSafeRemoteUrl } from './utils/appPlaybackHelpers';
+import { getSizedCoverUrl } from './utils/coverUrl';
+import { prewarmCoverImage } from './utils/coverPrewarm';
 import { getOnlineProviderIdForSong, getPlaybackSongKey, isLocalPlaybackSong, isNavidromePlaybackSong, isStagePlaybackSong } from './utils/appPlaybackGuards';
 import {
     noteAudioElementEvent,
@@ -594,6 +596,12 @@ export default function App() {
     );
 
     const coverUrl = getCoverUrl();
+
+    // 换歌时预解码要显示的封面：512 就是各处以 getSizedCoverUrl(coverUrl, 512) 显示的那张，
+    // 「点开专辑封面卡一下」的解码 + 首次纹理上传代价因此落在换歌这一刻，而不是用户点开那一帧。
+    useEffect(() => {
+        prewarmCoverImage(getSizedCoverUrl(coverUrl, 512));
+    }, [coverUrl]);
 
     // Theme Controller
     // manages current theme, daylight mode, and related actions like generating AI themes 

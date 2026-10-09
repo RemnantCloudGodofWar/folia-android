@@ -84,16 +84,40 @@ const readErrorDetail = async (response: Response): Promise<string> => {
     return rawText.trim();
 };
 
-const extractOpenAiText = (message: unknown): string => {
-    const messageRecord = (message ?? {}) as { content?: unknown };
-    if (typeof messageRecord.content === 'string') return messageRecord.content;
+/**
+ * 从 OpenAI 兼容响应里取模型文本。
+ *
+ * 除了标准的 `message.content`，还要认两种常见的「有响应但 content 为空」：
+ *  - 推理型模型 / 部分网关把答案放在 `reasoning_content`（或 `reasoning`）里，content 可能整个为空；
+ *  - 老式 completions 形状直接用 `choices[0].text`。
+ * 少了这两条，用户看到的就只是「Model returned an empty response」，无从判断是端点、模型还是解析问题。
+ */
+export const extractOpenAiText = (message: unknown, choice?: unknown): string => {
+    const messageRecord = (message ?? {}) as { content?: unknown; reasoning_content?: unknown; reasoning?: unknown };
+    if (typeof messageRecord.content === 'string' && messageRecord.content.trim()) return messageRecord.content;
     if (Array.isArray(messageRecord.content)) {
-        return messageRecord.content
+        const fromParts = messageRecord.content
             .filter((part) => part && typeof part === 'object' && (part as { type?: string }).type === 'text')
             .map((part) => String((part as { text?: unknown }).text ?? ''))
             .join('');
+        if (fromParts.trim()) return fromParts;
     }
-    return '';
+    for (const key of ['reasoning_content', 'reasoning'] as const) {
+        const value = messageRecord[key];
+        if (typeof value === 'string' && value.trim()) return value;
+    }
+    const legacyText = (choice as { text?: unknown } | undefined)?.text;
+    return typeof legacyText === 'string' ? legacyText : '';
+};
+
+/** 空响应最难查：把响应形态写进错误里（只报字段名与 finish_reason，不含任何密钥或正文）。 */
+const describeEmptyResponse = (scope: string, response: Response, choice: unknown): string => {
+    const choiceRecord = (choice ?? {}) as { finish_reason?: unknown; message?: unknown };
+    const messageKeys = choiceRecord.message && typeof choiceRecord.message === 'object'
+        ? Object.keys(choiceRecord.message as Record<string, unknown>).join('|')
+        : 'none';
+    const finish = typeof choiceRecord.finish_reason === 'string' ? choiceRecord.finish_reason : 'none';
+    return `Model returned an empty response (${scope}, status ${response.status}, finish=${finish}, message keys: ${messageKeys})`;
 };
 
 const requestGeminiThemeJson = async (systemPrompt: string, sourcePrompt: string): Promise<string> => {
@@ -125,7 +149,10 @@ const requestGeminiThemeJson = async (systemPrompt: string, sourcePrompt: string
         ? parts.find((part: unknown) => part && typeof (part as { text?: unknown }).text === 'string')
         : null;
     const jsonText = text ? String((text as { text: string }).text) : '';
-    if (!jsonText) throw new Error('Model returned an empty response');
+    if (!jsonText) {
+        const keys = data && typeof data === 'object' ? Object.keys(data).join('|') : 'none';
+        throw new Error(`Model returned an empty response (gemini, status ${response.status}, keys: ${keys})`);
+    }
     return jsonText;
 };
 
@@ -168,8 +195,9 @@ const requestOpenAiThemeJson = async (systemPrompt: string, sourcePrompt: string
     }
 
     const data = await response.json();
-    const text = extractOpenAiText(data?.choices?.[0]?.message);
-    if (!text.trim()) throw new Error('Model returned an empty response');
+    const choice = data?.choices?.[0];
+    const text = extractOpenAiText(choice?.message, choice);
+    if (!text.trim()) throw new Error(describeEmptyResponse('openai-compatible', response, choice));
     return text;
 };
 
@@ -286,12 +314,13 @@ export const testConfiguredAiConnection = async (): Promise<AiConnectionTestResu
                 };
             }
             const data = await response.json();
+            const choice = data?.choices?.[0];
             return {
                 ok: true,
                 durationMs,
                 status: response.status,
                 model,
-                reply: extractOpenAiText(data?.choices?.[0]?.message).trim().slice(0, 200),
+                reply: extractOpenAiText(choice?.message, choice).trim().slice(0, 200),
             };
         }
 

@@ -93,7 +93,7 @@ android/app/build/outputs/apk/debug/app-debug.apk
 - `npm run build:capacitor` 已通过
 - `npx cap sync android` 已通过
 - `gradlew assembleDebug` 已通过，产出 `android/app/build/outputs/apk/debug/app-debug.apk`
-- APK 包名 `top.izuna.foliamajor`，当前版本 `0.7.15-android.67`（`versionCode` 105），minSdk 24，targetSdk 36
+- APK 包名 `top.izuna.foliamajor`，当前版本 `0.7.15-android.68`（`versionCode` 106），minSdk 24，targetSdk 36
 
 ## 尚未完成
 

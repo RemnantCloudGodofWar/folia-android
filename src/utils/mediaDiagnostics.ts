@@ -39,6 +39,8 @@ type PlaybackContinuity = {
     lastEventAt: number;
     lastWallMs: number | null;
     lastMediaSec: number | null;
+    clockSamples: number;
+    lastClockProgressRatio: number | null;
     // 「歌卡」这类反馈：网络计数全是 0、缓冲也够，就得看有没有东西在动播放位置/速率，以及解码跟不跟得上。
     seekingCount: number;
     seekedCount: number;
@@ -108,6 +110,8 @@ const emptyContinuity = (): PlaybackContinuity => ({
     lastEventAt: 0,
     lastWallMs: null,
     lastMediaSec: null,
+    clockSamples: 0,
+    lastClockProgressRatio: null,
     seekingCount: 0,
     seekedCount: 0,
     rateChangeCount: 0,
@@ -126,6 +130,13 @@ let audioContextDiagnostics: AudioContextDiagnostics = {
     baseLatencySec: null,
     outputLatencySec: null,
     updatedAt: 0,
+};
+
+/** Test-only isolation hook; production diagnostics intentionally keep the latest session. */
+export const resetMediaDiagnosticsForTests = (): void => {
+    continuity = emptyContinuity();
+    playbackStreamInfo = null;
+    notedReadySources.clear();
 };
 
 const updateAudioContextDiagnostics = (context: AudioContext): void => {
@@ -350,7 +361,13 @@ export const noteAudioTimeUpdate = (
 
     const wallDeltaMs = eventAt - previousWall;
     const mediaDeltaMs = (mediaSec - previousMedia) * 1000;
-    if (wallDeltaMs < 400 || mediaDeltaMs < 0 || mediaDeltaMs >= wallDeltaMs * 0.75) return;
+    // Android `timeupdate` commonly arrives around 250ms apart. The old 400ms gate made the
+    // first meaningful playback sample disappear, so a reported audio stutter could look clean.
+    if (wallDeltaMs < 200 || mediaDeltaMs < 0) return;
+
+    continuity.clockSamples += 1;
+    continuity.lastClockProgressRatio = wallDeltaMs > 0 ? mediaDeltaMs / wallDeltaMs : null;
+    if (mediaDeltaMs >= wallDeltaMs * 0.75) return;
 
     const lostMs = Math.round(wallDeltaMs - mediaDeltaMs);
     if (lostMs < 150) return;
@@ -380,9 +397,11 @@ export const readPlaybackContinuitySnapshot = () => {
         stalledCount: continuity.stalledCount,
         errorCount: continuity.errorCount,
         clockLagCount: continuity.clockLagCount,
+        clockSamples: continuity.clockSamples,
         clockLagTotalMs: Math.round(continuity.clockLagTotalMs),
         clockLagMaxMs: Math.round(continuity.clockLagMaxMs),
         lastClockLagMs: continuity.lastClockLagMs,
+        lastClockProgressRatio: continuity.lastClockProgressRatio,
         lastEvent: continuity.lastEvent,
         lastEventAt: continuity.lastEventAt,
         seekingCount: continuity.seekingCount,

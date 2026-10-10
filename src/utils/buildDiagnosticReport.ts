@@ -10,6 +10,7 @@ import { isAiConfigured, readAiSettings } from '../services/aiSettings';
 import { isNeutralAudioEffects } from './audioEffects';
 import { getCollectionOrderDiagnosticLines } from './collectionOrderDiagnostics';
 import { getLyricsDiagnosticLines } from './lyricsDiagnostics';
+import { getLocalLibraryDiagnosticLines } from './localLibraryDiagnostics';
 
 // src/utils/buildDiagnosticReport.ts
 // 设置 → 帮助 → 复制诊断数据。给用户原样贴进 issue 用，所以字段固定为英文并包在代码块里。
@@ -96,6 +97,12 @@ const readPlaybackContinuityLines = (): string[] => {
             + ` total=${formatMilliseconds(continuity.clockLagTotalMs)}`
             + ` max=${formatMilliseconds(continuity.clockLagMaxMs)}`
             + ` last=${formatMilliseconds(continuity.lastClockLagMs)}`,
+        `  audio clock: samples=${continuity.clockSamples}`
+            + ` lag=${continuity.clockLagCount}`
+            + ` progress=${continuity.lastClockProgressRatio === null
+                ? 'n/a'
+                : `${(continuity.lastClockProgressRatio * 100).toFixed(0)}%`}`
+            + ` (media/wall; <75% counts as a stall)`,
         `  last audio event: ${continuity.lastEvent} at=${lastEventAt}`,
         `  audio context: state=${continuity.audioContextState}`
             + ` sampleRate=${continuity.audioContextSampleRate ?? 'n/a'}`
@@ -484,6 +491,10 @@ export const buildDiagnosticReport = async (): Promise<string> => {
 
     const libraryLines = getLibraryTraceLines();
     lines.push(...(libraryLines.length ? libraryLines.map(line => `  ${line}`) : ['  (none)']));
+
+    const localLibraryLines = getLocalLibraryDiagnosticLines();
+    lines.push('', 'local library trace:');
+    lines.push(...(localLibraryLines.length ? localLibraryLines : ['  (none)']));
 
     const collectionOrderLines = getCollectionOrderDiagnosticLines();
     lines.push('', 'collection order trace:');

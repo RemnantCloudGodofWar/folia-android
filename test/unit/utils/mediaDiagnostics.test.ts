@@ -1,10 +1,11 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import {
     noteAudioElementEvent,
     noteAudioElementProgress,
     noteAudioTimeUpdate,
     notePlaybackStreamInfo,
     readPlaybackContinuitySnapshot,
+    resetMediaDiagnosticsForTests,
 } from '@/utils/mediaDiagnostics';
 
 const createAudioElement = (src: string): HTMLAudioElement => {
@@ -29,6 +30,8 @@ afterEach(() => {
 });
 
 describe('mediaDiagnostics playback continuity', () => {
+    beforeEach(() => resetMediaDiagnosticsForTests());
+
     it('records a buffering interruption and the buffered-ahead window', () => {
         vi.useFakeTimers();
         vi.setSystemTime(new Date('2026-10-08T08:00:00Z'));
@@ -54,14 +57,32 @@ describe('mediaDiagnostics playback continuity', () => {
         const element = createAudioElement('https://m802.music.126.net/signed/audio.mp3?token=secret');
 
         noteAudioElementEvent('playing', element, 'B');
-        clock = 1600;
-        element.currentTime = 10.1;
+        clock = 1250;
+        element.currentTime = 10.05;
         noteAudioTimeUpdate(element, 'B');
 
         const snapshot = readPlaybackContinuitySnapshot();
         expect(snapshot.clockLagCount).toBe(1);
-        expect(snapshot.clockLagMaxMs).toBe(500);
-        expect(snapshot.lastClockLagMs).toBe(500);
+        expect(snapshot.clockSamples).toBe(1);
+        expect(snapshot.clockLagMaxMs).toBe(200);
+        expect(snapshot.lastClockLagMs).toBe(200);
+        expect(snapshot.lastClockProgressRatio).toBeCloseTo(0.2);
+    });
+
+    it('does not count normal playback progress as a clock stall', () => {
+        let clock = 2000;
+        vi.spyOn(performance, 'now').mockImplementation(() => clock);
+        const element = createAudioElement('https://m802.music.126.net/signed/audio.mp3?token=secret');
+
+        noteAudioElementEvent('playing', element, 'B');
+        clock = 2250;
+        element.currentTime = 10.25;
+        noteAudioTimeUpdate(element, 'B');
+
+        const snapshot = readPlaybackContinuitySnapshot();
+        expect(snapshot.clockSamples).toBe(1);
+        expect(snapshot.clockLagCount).toBe(0);
+        expect(snapshot.lastClockProgressRatio).toBeCloseTo(1);
     });
 
     // 「歌卡」反馈里最容易被漏掉的一条：缓冲充足、没有 waiting，但播放中位置/速率被改过。

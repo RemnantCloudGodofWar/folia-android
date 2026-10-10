@@ -62,5 +62,6 @@ describe('diagnostic report frame timing section', () => {
         expect(continuityLine('stream:')).toContain('level=');
         expect(continuityLine('element events:')).toContain('seeking=');
         expect(continuityLine('decode:')).toContain('bytes=');
+        expect(continuityLine('audio clock:')).toContain('progress=');
     });
 });

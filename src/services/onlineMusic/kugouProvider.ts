@@ -941,8 +941,17 @@ const getKugouPlaylistTrackSongs = async (
         );
     }
 
-    kugouLikedTrackCache.set(globalCollectionId, { fetchedAt: Date.now(), songs });
-    return songs;
+    const clientOrderSongs = songs.length > 1 ? songs.slice().reverse() : songs;
+    if (songs.length > 1) {
+        noteLibraryStep('kugou', 'playlist:client-order', {
+            collection: globalCollectionId,
+            tracks: songs.length,
+            transform: 'reversed',
+            source: 'liked-or-mutation',
+        });
+    }
+    kugouLikedTrackCache.set(globalCollectionId, { fetchedAt: Date.now(), songs: clientOrderSongs });
+    return clientOrderSongs;
 };
 
 const removeKugouPlaylistTrackCacheEntry = (globalCollectionId: string, hash: string): void => {
@@ -1343,7 +1352,21 @@ export const kugouProvider: OnlineMusicProvider = {
 
             const requestLimit = Math.min(Math.max(1, limit), KUGOU_MAX_PAGE_SIZE);
             const response = await requestKugou('playlist_track_all', { id: String(id), pagesize: requestLimit, page: Math.floor(offset / requestLimit) + 1 });
-            return pageOf(listOf(response).map(normalizeKugouSong), response, requestLimit, offset);
+            const tracks = listOf(response).map(normalizeKugouSong);
+            // KuGou's playlist API returns the list in the opposite order from the official
+            // client for regular playlists. Keep the provider response intact long enough to
+            // record the transform, then expose the same top-to-bottom order the listener sees
+            // in the KuGou app.
+            if (tracks.length > 1) {
+                noteLibraryStep('kugou', 'playlist:client-order', {
+                    collection: String(id),
+                    tracks: tracks.length,
+                    transform: 'reversed',
+                    offset,
+                });
+                tracks.reverse();
+            }
+            return pageOf(tracks, response, requestLimit, offset);
         },
         async getCloudTracks(limit, offset) {
             const requestLimit = Math.min(Math.max(1, limit), KUGOU_MAX_PAGE_SIZE);

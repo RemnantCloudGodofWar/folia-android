@@ -218,6 +218,19 @@ const readFrameTimingLines = (): string[] => {
             + `${loaf.worstAtMs !== null && frames.installedAtMs !== null
                 ? ` worst@+${((loaf.worstAtMs - frames.installedAtMs) / 1000).toFixed(1)}s`
                 : ''})`,
+        ...loaf.samples
+            .slice()
+            .sort((a, b) => b.blockingMs - a.blockingMs)
+            .slice(0, 5)
+            .map(sample => (
+                `  long frame: +${frames.installedAtMs === null
+                    ? 'n/a'
+                    : `${Math.max(0, (sample.atMs - frames.installedAtMs) / 1000).toFixed(1)}s`}`
+                + ` blocking=${formatMilliseconds(sample.blockingMs)}`
+                + ` script=${formatMilliseconds(sample.scriptMs)}`
+                + ` style+layout=${formatMilliseconds(sample.styleLayoutMs)}`
+                + ` @${sample.invoker}`
+            )),
         `  cpu probe: ${(cpu.ops / 1e6).toFixed(1)}M ops in ${cpu.durationMs.toFixed(0)}ms`
             + ` index=${cpu.index} (${(cpu.opsPerSecond / 1e6).toFixed(1)}M ops/s, 跨设备相对值)`,
         `  playback while sampling: state=${String(playback.playerState)}`

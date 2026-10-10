@@ -60,7 +60,17 @@ export type LongAnimationFrameStats = {
     worstInvoker: string;
     /** 最重那一帧的开始时刻（performance.now 原点），用来和用户的操作对上号。 */
     worstAtMs: number | null;
+    /** Bounded sample list so repeat offenders remain visible after the heaviest one is seen. */
+    samples: Array<{
+        blockingMs: number;
+        scriptMs: number;
+        styleLayoutMs: number;
+        invoker: string;
+        atMs: number;
+    }>;
 };
+
+const MAX_LOAF_SAMPLES = 8;
 
 /** 移动中（滚动 / 触摸拖动）的帧统计：和整体统计分开看，才分得清「日常播放卡」还是「一动就卡」。 */
 export type MotionFrameStats = {
@@ -131,6 +141,7 @@ const emptyLongAnimationFrames = (): LongAnimationFrameStats => ({
     worstStyleLayoutMs: 0,
     worstInvoker: '',
     worstAtMs: null,
+    samples: [],
 });
 
 /** 只留文件名：绝对路径不进报告。 */
@@ -540,6 +551,16 @@ const installLongAnimationFrameObserver = (): void => {
                     maxBlockingMs: Math.max(longAnimationFrames.maxBlockingMs, summary.blockingMs),
                     scriptMs: longAnimationFrames.scriptMs + summary.scriptMs,
                     styleLayoutMs: longAnimationFrames.styleLayoutMs + summary.styleLayoutMs,
+                    samples: [
+                        ...longAnimationFrames.samples,
+                        {
+                            blockingMs: summary.blockingMs,
+                            scriptMs: summary.scriptMs,
+                            styleLayoutMs: summary.styleLayoutMs,
+                            invoker: summary.invoker || 'unknown',
+                            atMs: entry.startTime,
+                        },
+                    ].slice(-MAX_LOAF_SAMPLES),
                 };
                 if (summary.blockingMs >= longAnimationFrames.worstBlockingMs) {
                     longAnimationFrames = {

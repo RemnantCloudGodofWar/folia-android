@@ -266,7 +266,7 @@ export const noteAudioElementEvent = (
         updateElementState(element, deck);
         const eventAt = wallNow();
         continuity.lastEvent = deck ? `${kind} deck=${deck}` : kind;
-        continuity.lastEventAt = eventAt;
+        continuity.lastEventAt = wallNow();
 
         if (kind === 'waiting') {
             if (continuity.waitingSinceMs === null) {
@@ -376,7 +376,7 @@ export const noteAudioTimeUpdate = (
     continuity.clockLagMaxMs = Math.max(continuity.clockLagMaxMs, lostMs);
     continuity.lastClockLagMs = lostMs;
     continuity.lastEvent = deck ? `clock-lag deck=${deck}` : 'clock-lag';
-    continuity.lastEventAt = eventAt;
+    continuity.lastEventAt = wallNow();
 };
 
 export type PlaybackContinuitySnapshot = ReturnType<typeof readPlaybackContinuitySnapshot>;

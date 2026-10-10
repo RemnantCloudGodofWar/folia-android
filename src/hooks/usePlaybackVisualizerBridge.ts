@@ -46,6 +46,8 @@ type UsePlaybackVisualizerBridgeParams = {
 };
 
 // Runs the requestAnimationFrame loop for audio-reactive visuals and lyric timing.
+const EMPTY_FREQUENCY_DATA = new Uint8Array(0);
+
 export function usePlaybackVisualizerBridge({
     audioRef,
     analyserRef,
@@ -73,6 +75,7 @@ export function usePlaybackVisualizerBridge({
     const lyrics = usePlaybackStore(selectDisplayLyrics);
 
     const currentLineIndexRef = useRef(-1);
+    const frequencyDataRef = useRef<Uint8Array<ArrayBuffer> | null>(null);
 
     const updateLoop = useCallback(() => {
         // Normally the active deck; the outgoing one for as long as a blend holds the picture on
@@ -86,7 +89,11 @@ export function usePlaybackVisualizerBridge({
 
         if (hasAudibleSignal && analyserRef.current) {
             const bufferLength = analyserRef.current.frequencyBinCount;
-            const dataArray = new Uint8Array(bufferLength);
+            let dataArray = frequencyDataRef.current;
+            if (!dataArray || dataArray.length !== bufferLength) {
+                dataArray = new Uint8Array(bufferLength);
+                frequencyDataRef.current = dataArray;
+            }
             analyserRef.current.getByteFrequencyData(dataArray);
             audioBands.spectrum?.set(dataArray);
 
@@ -127,7 +134,7 @@ export function usePlaybackVisualizerBridge({
             audioBands.mid.set(breath);
             audioBands.vocal.set(breath);
             audioBands.treble.set(breath);
-            audioBands.spectrum?.set(new Uint8Array(0));
+            audioBands.spectrum?.set(EMPTY_FREQUENCY_DATA);
         }
 
         if (isActuallyPlaying && audioElement) {

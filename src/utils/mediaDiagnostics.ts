@@ -73,6 +73,10 @@ type AudioContextDiagnostics = {
     sampleRate: number | null;
     baseLatencySec: number | null;
     outputLatencySec: number | null;
+    latencyHint: string;
+    renderCapacity: number | null;
+    stateChangeCount: number;
+    lastStateChangeAt: number | null;
     updatedAt: number;
 };
 
@@ -129,6 +133,10 @@ let audioContextDiagnostics: AudioContextDiagnostics = {
     sampleRate: null,
     baseLatencySec: null,
     outputLatencySec: null,
+    latencyHint: 'unknown',
+    renderCapacity: null,
+    stateChangeCount: 0,
+    lastStateChangeAt: null,
     updatedAt: 0,
 };
 
@@ -140,19 +148,32 @@ export const resetMediaDiagnosticsForTests = (): void => {
 };
 
 const updateAudioContextDiagnostics = (context: AudioContext): void => {
+    const renderCapacity = (context as AudioContext & { renderCapacity?: number }).renderCapacity;
     audioContextDiagnostics = {
+        ...audioContextDiagnostics,
         state: context.state || 'unknown',
         sampleRate: Number.isFinite(context.sampleRate) ? context.sampleRate : null,
         baseLatencySec: Number.isFinite(context.baseLatency) ? context.baseLatency : null,
         outputLatencySec: Number.isFinite(context.outputLatency) ? context.outputLatency : null,
+        renderCapacity: typeof renderCapacity === 'number' && Number.isFinite(renderCapacity)
+            ? renderCapacity
+            : null,
         updatedAt: wallNow(),
     };
 };
 
-export const noteAudioContext = (context: AudioContext | null | undefined): void => {
+export const noteAudioContext = (
+    context: AudioContext | null | undefined,
+    latencyHint?: AudioContextLatencyCategory | 'unknown',
+): void => {
     if (!context) return;
+    audioContextDiagnostics.latencyHint = latencyHint || 'unknown';
     updateAudioContextDiagnostics(context);
-    context.addEventListener('statechange', () => updateAudioContextDiagnostics(context));
+    context.addEventListener('statechange', () => {
+        audioContextDiagnostics.stateChangeCount += 1;
+        audioContextDiagnostics.lastStateChangeAt = wallNow();
+        updateAudioContextDiagnostics(context);
+    });
 };
 
 const resetIfStale = (): void => {
@@ -417,6 +438,10 @@ export const readPlaybackContinuitySnapshot = () => {
         audioContextSampleRate: audioContextDiagnostics.sampleRate,
         audioContextBaseLatencySec: audioContextDiagnostics.baseLatencySec,
         audioContextOutputLatencySec: audioContextDiagnostics.outputLatencySec,
+        audioContextLatencyHint: audioContextDiagnostics.latencyHint,
+        audioContextRenderCapacity: audioContextDiagnostics.renderCapacity,
+        audioContextStateChangeCount: audioContextDiagnostics.stateChangeCount,
+        audioContextLastStateChangeAt: audioContextDiagnostics.lastStateChangeAt,
         audioContextUpdatedAt: audioContextDiagnostics.updatedAt,
     };
 };

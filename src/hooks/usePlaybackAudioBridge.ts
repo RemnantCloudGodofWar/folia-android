@@ -138,9 +138,11 @@ export function usePlaybackAudioBridge({
         if (!audioRef.current || audioContextRef.current) return;
         try {
             const AudioContextClass = window.AudioContext || (window as Window & typeof globalThis & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-            const ctx = new AudioContextClass();
+            // Music playback favors stability over the browser's tiny interactive buffer. On
+            // Android WebView the interactive default can underrun under load and produce clicks.
+            const ctx = new AudioContextClass({ latencyHint: 'playback' });
             audioContextRef.current = ctx;
-            noteAudioContext(ctx);
+            noteAudioContext(ctx, 'playback');
 
             const analyser = ctx.createAnalyser();
             analyser.fftSize = 2048;

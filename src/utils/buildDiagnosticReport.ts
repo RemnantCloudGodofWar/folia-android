@@ -107,7 +107,15 @@ const readPlaybackContinuityLines = (): string[] => {
         `  audio context: state=${continuity.audioContextState}`
             + ` sampleRate=${continuity.audioContextSampleRate ?? 'n/a'}`
             + ` baseLatency=${formatSeconds(continuity.audioContextBaseLatencySec)}`
-            + ` outputLatency=${formatSeconds(continuity.audioContextOutputLatencySec)}`,
+            + ` outputLatency=${formatSeconds(continuity.audioContextOutputLatencySec)}`
+            + ` latencyHint=${continuity.audioContextLatencyHint}`
+            + ` renderCapacity=${continuity.audioContextRenderCapacity === null
+                ? 'n/a'
+                : continuity.audioContextRenderCapacity.toFixed(3)}`
+            + ` stateChanges=${continuity.audioContextStateChangeCount}`
+            + ` lastStateChange=${continuity.audioContextLastStateChangeAt
+                ? new Date(continuity.audioContextLastStateChangeAt).toISOString()
+                : 'n/a'}`,
         `  output settings: quality=${audioSettings.audioQuality} replayGain=${playback.replayGainMode}`
             + ` fade=${audioSettings.playbackFadeEnabled ? 'on' : 'off'}`,
         `  effects: enabled=${equalizer.enabled ? 'yes' : 'no'}`

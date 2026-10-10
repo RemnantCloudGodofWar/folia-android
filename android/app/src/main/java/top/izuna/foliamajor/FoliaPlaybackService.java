@@ -8,6 +8,7 @@ import android.app.Service;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.content.Intent;
+import android.net.wifi.WifiManager;
 import android.media.MediaMetadata;
 import android.media.session.MediaSession;
 import android.media.session.PlaybackState;
@@ -15,6 +16,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.PowerManager;
 
 import androidx.annotation.Nullable;
 
@@ -41,6 +43,9 @@ public class FoliaPlaybackService extends Service {
     private volatile String appliedArtworkUrl = "";
     private volatile Bitmap appliedArtworkBitmap = null;
     private volatile String lastRequestedCoverUrl = "";
+    private PowerManager.WakeLock wakeLock;
+    private WifiManager.WifiLock wifiLock;
+    private static volatile String powerDiagnostic = "inactive";
 
     @Override
     public void onCreate() {
@@ -55,6 +60,19 @@ public class FoliaPlaybackService extends Service {
             @Override public void onStop() { emit("stop"); }
         });
         mediaSession.setActive(true);
+        PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);
+        if (powerManager != null) {
+            wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Folia:Playback");
+            wakeLock.setReferenceCounted(false);
+        }
+        WifiManager wifiManager = (WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
+        if (wifiManager != null) {
+            int lockMode = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+                ? WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+                : WifiManager.WIFI_MODE_FULL_HIGH_PERF;
+            wifiLock = wifiManager.createWifiLock(lockMode, "Folia:Playback");
+            wifiLock.setReferenceCounted(false);
+        }
     }
 
     @Override
@@ -103,6 +121,7 @@ public class FoliaPlaybackService extends Service {
 
         Notification notification = buildNotification(title, artist, playing, retainedArtwork);
         startForeground(NOTIFICATION_ID, notification);
+        updatePlaybackLocks(playing);
         loadArtwork(currentArtworkUrl, bitmap -> {
             if (!currentArtworkUrl.equals(coverUrl == null ? "" : coverUrl.trim())) return;
             mediaSession.setMetadata(buildMetadata(title, artist, album, duration, bitmap, currentArtworkUrl));
@@ -256,6 +275,36 @@ public class FoliaPlaybackService extends Service {
         void onLoaded(Bitmap bitmap);
     }
 
+    /**
+     * Keeps the remote-audio proxy alive in the background.
+     *
+     * A foreground service keeps the process visible, but it does not stop Doze from throttling
+     * the CPU or the Wi-Fi radio. Playback pulls the stream through LocalAudioServer, so losing
+     * either one shows up as intermittent audio while the screen is off.
+     */
+    private void updatePlaybackLocks(boolean playing) {
+        try {
+            if (playing) {
+                if (wakeLock != null && !wakeLock.isHeld()) wakeLock.acquire();
+                if (wifiLock != null && !wifiLock.isHeld()) wifiLock.acquire();
+            } else {
+                if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
+                if (wifiLock != null && wifiLock.isHeld()) wifiLock.release();
+            }
+            powerDiagnostic = "wake=" + (wakeLock != null && wakeLock.isHeld() ? "held" : "released")
+                + " wifi=" + (wifiLock != null && wifiLock.isHeld() ? "held" : "released")
+                + " error=none";
+        } catch (Exception error) {
+            powerDiagnostic = "wake=" + (wakeLock != null && wakeLock.isHeld() ? "held" : "released")
+                + " wifi=" + (wifiLock != null && wifiLock.isHeld() ? "held" : "released")
+                + " error=" + error.getClass().getSimpleName();
+        }
+    }
+
+    static String getPowerDiagnostic() {
+        return powerDiagnostic;
+    }
+
     private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel channel = new NotificationChannel(
@@ -274,6 +323,7 @@ public class FoliaPlaybackService extends Service {
 
     @Override
     public void onDestroy() {
+        updatePlaybackLocks(false);
         artworkExecutor.shutdownNow();
         if (mediaSession != null) {
             mediaSession.setActive(false);

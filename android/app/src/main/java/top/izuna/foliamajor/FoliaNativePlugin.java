@@ -479,6 +479,7 @@ public class FoliaNativePlugin extends Plugin {
         result.put("detail", playbackArtworkDetail);
         result.put("at", playbackArtworkAt);
         result.put("applied", playbackArtworkApplied);
+        result.put("power", FoliaPlaybackService.getPowerDiagnostic());
         call.resolve(result);
     }
 

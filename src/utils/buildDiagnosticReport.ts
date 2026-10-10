@@ -256,6 +256,7 @@ const readNativePlaybackDiagnostics = async (): Promise<{
     detail?: string;
     at?: number;
     applied?: boolean;
+    power?: string;
 } | null> => {
     if (typeof window === 'undefined') return null;
     const plugin = (window as any).Capacitor?.Plugins?.FoliaNative;
@@ -561,6 +562,7 @@ export const buildDiagnosticReport = async (): Promise<string> => {
         lines.push(`  detail: ${playbackDiagnostics.detail || '(empty)'}`);
         lines.push(`  applied: ${playbackDiagnostics.applied ? 'yes' : 'no'}`);
         lines.push(`  at: ${playbackDiagnostics.at ? new Date(playbackDiagnostics.at).toISOString() : '(not recorded)'}`);
+        lines.push(`  power: ${playbackDiagnostics.power || '(not recorded)'}`);
     }
 
     lines.push('```');

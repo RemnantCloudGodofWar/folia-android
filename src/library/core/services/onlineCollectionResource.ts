@@ -5,6 +5,7 @@ import type { OnlineGridViewCollectionDescriptor } from '../contracts/collection
 import type { CollectionLoadError, CollectionResource, CollectionResourceContext } from '../contracts/resource';
 import { getPlaybackSongKey } from '../../../utils/appPlaybackGuards';
 import { collectionRevision } from '../model/collectionIdentity';
+import { recordCollectionOrderMerged } from '../../../utils/collectionOrderDiagnostics';
 import { createCollectionResourceState } from './collectionResourceState';
 import {
     isOnlineTracksCacheValid,
@@ -111,6 +112,12 @@ export const createOnlineCollectionResource = (key: string, deps: OnlineCollecti
                 const visible = withoutTombstones(nextTracks);
                 upstreamOffset = nextOffset;
                 state.set({ tracks: visible }, 'background');
+                recordCollectionOrderMerged({
+                    phase: 'merged', source: 'sync', providerId: collection.providerId,
+                    collectionId: String(collection.id), collectionType: collection.type,
+                    offset: 0, itemCount: visible.length, hasMore, nextOffset,
+                    tracks: visible,
+                });
                 void deps.writeCache(cacheKey(), visible, tombstones.size ? 0 : targetTime, { nextOffset, hasMore, total: totalTracks });
             },
             ...(deps.wait ? { wait: deps.wait } : {}),
@@ -162,6 +169,11 @@ export const createOnlineCollectionResource = (key: string, deps: OnlineCollecti
                 upstreamOffset = cached.nextOffset!;
                 loading = false;
                 state.set({ status: 'ready', tracks }, 'urgent');
+                recordCollectionOrderMerged({
+                    phase: 'merged', source: 'cache', providerId: collection.providerId,
+                    collectionId: String(collection.id), collectionType: collection.type,
+                    offset: 0, itemCount: tracks.length, hasMore: cached.hasMore, tracks,
+                });
                 if (cached.hasMore) {
                     void startSync(tracks, targetTime, cached.total ?? collection.trackCount, upstreamOffset);
                 }
@@ -198,6 +210,12 @@ export const createOnlineCollectionResource = (key: string, deps: OnlineCollecti
             const tracks = withoutTombstones(responseTracks);
             upstreamOffset = nextOffset || responseTracks.length;
             state.set({ status: 'ready', tracks }, 'background');
+            recordCollectionOrderMerged({
+                phase: 'merged', source: 'first-page', providerId: collection.providerId,
+                collectionId: String(collection.id), collectionType: collection.type,
+                offset: 0, itemCount: tracks.length, hasMore, nextOffset: upstreamOffset,
+                tracks,
+            });
             void deps.writeCache(cacheKey(), tracks, targetTime, { nextOffset: upstreamOffset, hasMore, total });
             if (hasMore) {
                 void startSync(tracks, targetTime, total, upstreamOffset);

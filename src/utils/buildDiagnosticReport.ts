@@ -8,6 +8,7 @@ import { readFrameTimingSnapshot, runCpuProbe } from './frameTimingDiagnostics';
 import { readLastAiThemeAttempt, readAiThemeAttempts, readFailedAiThemeAttempts } from './aiThemeDiagnostics';
 import { isAiConfigured, readAiSettings } from '../services/aiSettings';
 import { isNeutralAudioEffects } from './audioEffects';
+import { getCollectionOrderDiagnosticLines } from './collectionOrderDiagnostics';
 
 // src/utils/buildDiagnosticReport.ts
 // 设置 → 帮助 → 复制诊断数据。给用户原样贴进 issue 用，所以字段固定为英文并包在代码块里。
@@ -482,6 +483,10 @@ export const buildDiagnosticReport = async (): Promise<string> => {
 
     const libraryLines = getLibraryTraceLines();
     lines.push(...(libraryLines.length ? libraryLines.map(line => `  ${line}`) : ['  (none)']));
+
+    const collectionOrderLines = getCollectionOrderDiagnosticLines();
+    lines.push('', 'collection order trace:');
+    lines.push(...(collectionOrderLines.length ? collectionOrderLines : ['  (none)']));
 
     const qrLines = getQrLoginTraceLines('qq');
     if (qrLines.length) {

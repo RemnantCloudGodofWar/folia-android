@@ -38,6 +38,7 @@ import {
 } from './providerRegistry';
 import { saveProviderAccountSnapshot } from './providerAccountCache';
 import { applyOmniAudioHook, applyOmniLyricsHook } from '../hostExtensionHooks';
+import { recordCollectionOrderPage } from '../../utils/collectionOrderDiagnostics';
 
 // src/services/onlineMusic/omni.ts
 // Online Music Network Interface (Omni) - a unified interface for interacting with multiple online music providers.
@@ -533,13 +534,28 @@ export const omni = {
 
     async getCollectionTracks(collection: OmniCollection, page: PageInput): Promise<OmniPage<UnifiedSong>> {
         const provider = providerForCollection(collection);
+        let result: OmniPage<UnifiedSong>;
         if (collection.type === 'album') {
-            return provider.catalog?.getAlbumTracks?.(collection.id, page.limit, page.offset, collection) ?? emptyPage(page.offset);
+            result = await provider.catalog?.getAlbumTracks?.(collection.id, page.limit, page.offset, collection) ?? emptyPage(page.offset);
+        } else if (collection.type === 'cloud') {
+            result = await provider.catalog?.getCloudTracks?.(page.limit, page.offset, collection) ?? emptyPage(page.offset);
+        } else {
+            result = await provider.catalog?.getPlaylistTracks?.(collection.id, page.limit, page.offset, collection) ?? emptyPage(page.offset);
         }
-        if (collection.type === 'cloud') {
-            return provider.catalog?.getCloudTracks?.(page.limit, page.offset, collection) ?? emptyPage(page.offset);
-        }
-        return provider.catalog?.getPlaylistTracks?.(collection.id, page.limit, page.offset, collection) ?? emptyPage(page.offset);
+        recordCollectionOrderPage({
+            phase: 'page',
+            source: 'provider-page',
+            providerId: provider.id,
+            collectionId: String(collection.id),
+            collectionType: collection.type,
+            offset: page.offset,
+            requestedLimit: page.limit,
+            itemCount: result.items.length,
+            hasMore: result.hasMore,
+            nextOffset: result.nextOffset,
+            tracks: result.items,
+        });
+        return result;
     },
 
     async getAlbumDetail(collection: OmniCollection): Promise<OmniCollection | null> {

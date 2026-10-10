@@ -55,4 +55,12 @@ describe('nativeAndroidBridge header safety', () => {
         expect(toHeaderSafeValue('café')).toBe('café');
         expect(toHeaderSafeValue('用户凭证')).toBe('%E7%94%A8%E6%88%B7%E5%87%AD%E8%AF%81');
     });
+
+    it('sanitizes init headers before the Headers constructor sees them', async () => {
+        const { toHeaderEntries } = await import('@/services/nativeAndroidBridge');
+
+        expect(toHeaderEntries({ Cookie: '用户凭证' })).toEqual([
+            ['Cookie', '%E7%94%A8%E6%88%B7%E5%87%AD%E8%AF%81'],
+        ]);
+    });
 });

@@ -231,10 +231,12 @@ const installFetchShim = (plugin: NativePlugin) => {
 
     const method = (init?.method || request?.method || 'GET').toUpperCase();
     const headers = new Headers();
-    const requestHeaders = request?.headers ? Array.from(request.headers.entries()) : [];
-    const initHeaders = init?.headers ? Array.from(new Headers(init.headers).entries()) : [];
+    const requestHeaders = request?.headers
+      ? Array.from(request.headers.entries()).map(([name, value]) => [name, toHeaderSafeValue(value)] as [string, string])
+      : [];
+    const initHeaders = toHeaderEntries(init?.headers);
     for (const [name, value] of [...requestHeaders, ...initHeaders]) {
-      headers.append(name, toHeaderSafeValue(value));
+      headers.append(name, value);
     }
     const serialized = await serializeBody(init?.body ?? null);
     if (serialized.contentType && !headers.has('content-type')) {
@@ -316,6 +318,18 @@ export const toHeaderSafeValue = (value: unknown): string => {
     safe += codePoint <= 0xff ? character : encodeURIComponent(character);
   }
   return safe;
+};
+
+/** Flattens every supported HeadersInit shape without constructing Headers from raw unsafe text. */
+export const toHeaderEntries = (headers: HeadersInit | undefined): Array<[string, string]> => {
+  if (!headers) return [];
+  if (headers instanceof Headers) {
+    return Array.from(headers.entries()).map(([name, value]) => [name, toHeaderSafeValue(value)]);
+  }
+  const entries = Array.isArray(headers)
+    ? headers
+    : Object.entries(headers);
+  return entries.map(([name, value]) => [String(name), toHeaderSafeValue(value)]);
 };
 
 const flushQueuedRequests = () => {

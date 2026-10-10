@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type React from 'react';
 import { PlayerState, type ActiveLocalLyricsSource, type LyricData, type PlaybackContext, type ReplayGainMode, type SongResult } from '../types';
 import { createCoverUrlResolver } from '../components/app/playback/createCoverUrlResolver';
+import { describeLyricsShape, noteLyricsDiagnostic } from '../utils/lyricsDiagnostics';
 
 /** The now-playing picture, frozen for as long as a transition is running. */
 export interface TransitionDisplay {
@@ -102,7 +103,11 @@ export const usePlaybackStore = create<PlaybackStoreState>((set, get) => ({
     setAudioSrc: (next) => set({ audioSrc: resolve(next, get().audioSrc) }),
     // Plain setter: the extension transform (Folium `lyrics.transform`) runs in the lyrics
     // pipeline (createLyricsSetter), so functional updates here never re-transform.
-    setLyricsState: (next) => set({ lyrics: resolve(next, get().lyrics) }),
+    setLyricsState: (next) => {
+        const lyrics = resolve(next, get().lyrics);
+        noteLyricsDiagnostic('store:set', get().currentSong, describeLyricsShape(lyrics));
+        set({ lyrics });
+    },
     setActiveLocalLyricsSource: (next) => set({ activeLocalLyricsSource: resolve(next, get().activeLocalLyricsSource) }),
     setCachedCoverUrl: (next) => set({ cachedCoverUrl: resolve(next, get().cachedCoverUrl) }),
     setDuration: (next) => set({ duration: resolve(next, get().duration) }),

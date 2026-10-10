@@ -9,6 +9,7 @@ import { readLastAiThemeAttempt, readAiThemeAttempts, readFailedAiThemeAttempts 
 import { isAiConfigured, readAiSettings } from '../services/aiSettings';
 import { isNeutralAudioEffects } from './audioEffects';
 import { getCollectionOrderDiagnosticLines } from './collectionOrderDiagnostics';
+import { getLyricsDiagnosticLines } from './lyricsDiagnostics';
 
 // src/utils/buildDiagnosticReport.ts
 // 设置 → 帮助 → 复制诊断数据。给用户原样贴进 issue 用，所以字段固定为英文并包在代码块里。
@@ -487,6 +488,10 @@ export const buildDiagnosticReport = async (): Promise<string> => {
     const collectionOrderLines = getCollectionOrderDiagnosticLines();
     lines.push('', 'collection order trace:');
     lines.push(...(collectionOrderLines.length ? collectionOrderLines : ['  (none)']));
+
+    const lyricsLines = getLyricsDiagnosticLines();
+    lines.push('', 'lyrics pipeline trace:');
+    lines.push(...(lyricsLines.length ? lyricsLines : ['  (none)']));
 
     const qrLines = getQrLoginTraceLines('qq');
     if (qrLines.length) {

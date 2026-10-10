@@ -11,6 +11,7 @@ import { applyDetectedChorusEffects, applyNeteaseChorusByTime } from '../../../u
 import type { NeteaseChorusRange } from '../../../utils/lyrics/chorusEffects';
 import { getPlaybackSongKey } from '../../../utils/appPlaybackGuards';
 import { applyLyricsTransform, untransformedLyrics } from '../../../services/hostExtensionHooks';
+import { describeLyricsShape, noteLyricsDiagnostic } from '../../../utils/lyricsDiagnostics';
 
 // src/components/app/playback/createLyricsSetter.ts
 
@@ -65,6 +66,7 @@ export const createLyricsSetter = (
         let processed = nextLyrics && isPureMusicLyricLines(nextLyrics.lines)
             ? null
             : applyLyricStaffPolicy(applyLyricDisplayFilter(nextLyrics, lyricFilterPattern), staffOptions);
+        const incomingShape = describeLyricsShape(nextLyrics);
         if (processed) {
             const hasChorus = processed.lines.some(line => line.isChorus);
             if (hasChorus) {
@@ -102,8 +104,23 @@ export const createLyricsSetter = (
             // the chain, so it sees the lines that actually survived filtering.
             processed = applyLyricWordSegmentation(processed, getLyricSegmentationRecord());
             // Extension layers (Folium `lyrics.transform`) see the finished lyrics once per load.
-            setLyricsState(applyLyricsTransform(ensureLyricDataRenderHints(processed)));
+            const finalLyrics = applyLyricsTransform(ensureLyricDataRenderHints(processed));
+            noteLyricsDiagnostic('setter:applied', currentSong, {
+                ...incomingShape,
+                ...Object.fromEntries(
+                    Object.entries(describeLyricsShape(finalLyrics)).map(([key, value]) => [`out_${key}`, value]),
+                ),
+            });
+            setLyricsState(finalLyrics);
         } else {
+            noteLyricsDiagnostic('setter:null', currentSong, {
+                ...incomingShape,
+                reason: !nextLyrics
+                    ? 'incoming-null'
+                    : isPureMusicLyricLines(nextLyrics.lines)
+                        ? 'pure-music-prompt'
+                        : 'filtered-or-staff-policy',
+            });
             setLyricsState(null);
         }
     };

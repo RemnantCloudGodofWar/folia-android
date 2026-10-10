@@ -31,6 +31,7 @@ import { dispatchSearchTrackAction } from '../components/app/search/searchTrackA
 import { playbackFade } from '../services/playbackFade';
 import { getProviderSongMetadata } from '../services/onlineMusic/songMetadata';
 import { setStatusMessage as setStatusMsg } from '../stores/useStatusMessageStore';
+import { noteLyricsDiagnostic } from '../utils/lyricsDiagnostics';
 import { setAudioSrc, setCachedCoverUrl, setCurrentLineIndex, setCurrentSong, setDuration, setIsFmMode, setPlayQueue, setPlayerState, usePlaybackStore } from '../stores/usePlaybackStore';
 import { useTranslation } from 'react-i18next';
 import { currentTime } from '../stores/motionSignals';
@@ -618,6 +619,7 @@ export function usePlaybackQueueController({
         const onlineLyricsState = await loadOnlineLyricsState(song);
 
         setLyrics(null);
+        noteLyricsDiagnostic('queue:reset', song);
         setCurrentLineIndex(-1);
         currentTime.set(0);
         setDuration(0);
@@ -673,6 +675,7 @@ export function usePlaybackQueueController({
         setAudioSrc(audioResult.audioSrc);
 
         try {
+            noteLyricsDiagnostic('queue:load:start', song);
             await loadOnlineSongLyrics(song, prefetched, userId, {
                 isCurrent: () => currentSongRef.current === songKey,
                 onLyrics: resolvedLyrics => setLyrics(resolvedLyrics),
@@ -691,9 +694,15 @@ export function usePlaybackQueueController({
                 onAutoMatchStart: () => {
                     setStatusMsg({ type: 'info', text: t('status.matchingBestLyrics') });
                 },
-                onDone: () => setIsLyricsLoading(false),
+                onDone: () => {
+                    noteLyricsDiagnostic('queue:load:done', song);
+                    setIsLyricsLoading(false);
+                },
             });
         } catch (error) {
+            noteLyricsDiagnostic('queue:load:error', song, {
+                message: error instanceof Error ? error.message : String(error),
+            });
             console.warn('[App] Lyric fetch failed', error);
             setLyrics(null);
             setIsLyricsLoading(false);

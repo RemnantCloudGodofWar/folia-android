@@ -282,6 +282,25 @@
           // 字体轮盘失败就保持静态词标。
         }
       })();
+
+      // Last-resort startup guard: if the module bundle or React root never reaches its first
+      // effect, keep the user from staring at an endless loading animation. The splash is replaced
+      // with a tappable retry instead of disappearing into an unexplained blank page.
+      window.setTimeout(function () {
+        var splash = document.getElementById('app-splash');
+        if (!splash) {
+          return;
+        }
+        splash.innerHTML =
+          '<div style="display:flex;flex-direction:column;align-items:center;gap:14px;' +
+          'color:#fff;font:14px/1.5 system-ui,sans-serif;text-align:center;padding:24px">' +
+          '<div style="font-size:18px;font-weight:600">启动超时</div>' +
+          '<div style="opacity:.7">Startup timed out. Tap to reload.</div></div>';
+        splash.style.cursor = 'pointer';
+        splash.addEventListener('click', function () {
+          window.location.reload();
+        });
+      }, 12000);
     </script>
     <div id="root"></div>
     <script type="module" src="/src/index.tsx"></script>

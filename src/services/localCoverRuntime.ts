@@ -7,29 +7,46 @@ import { isLocalCoverAssetUrl } from './localCoverAssetUrl';
 
 export const LOCAL_COVER_SERVICE_WORKER_READY_TIMEOUT_MS = 10_000;
 
-// Bounds startup waiting while preserving the original registration result on success.
-export const waitForLocalCoverServiceWorkerReady = async (
-  ready: PromiseLike<ServiceWorkerRegistration>,
+const withStartupTimeout = async <T>(
+  pending: PromiseLike<T>,
   timeoutMs = LOCAL_COVER_SERVICE_WORKER_READY_TIMEOUT_MS,
-): Promise<ServiceWorkerRegistration> => {
+  label = 'Local cover service worker readiness',
+): Promise<T> => {
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
     timeoutId = setTimeout(() => {
-      reject(new Error(`Local cover service worker readiness timed out after ${timeoutMs}ms.`));
+      reject(new Error(`${label} timed out after ${timeoutMs}ms.`));
     }, timeoutMs);
   });
 
   try {
-    return await Promise.race([Promise.resolve(ready), timeout]);
+    return await Promise.race([Promise.resolve(pending), timeout]);
   } finally {
     if (timeoutId !== undefined) clearTimeout(timeoutId);
   }
 };
 
+// Bounds startup waiting while preserving the original registration result on success.
+export const waitForLocalCoverServiceWorkerReady = (
+  ready: PromiseLike<ServiceWorkerRegistration>,
+  timeoutMs = LOCAL_COVER_SERVICE_WORKER_READY_TIMEOUT_MS,
+): Promise<ServiceWorkerRegistration> => (
+  withStartupTimeout(ready, timeoutMs, 'Local cover service worker readiness')
+);
+
+export const waitForLocalCoverServiceWorkerRegistration = (
+  registration: PromiseLike<ServiceWorkerRegistration>,
+  timeoutMs = LOCAL_COVER_SERVICE_WORKER_READY_TIMEOUT_MS,
+): Promise<ServiceWorkerRegistration> => (
+  withStartupTimeout(registration, timeoutMs, 'Local cover service worker registration')
+);
+
 export const initializeLocalCoverRuntime = async (): Promise<void> => {
   if (isLocalCoverWebRuntimeSupported() && 'serviceWorker' in navigator) {
     try {
-      await navigator.serviceWorker.register('/folia-cover-sw.js', { scope: '/' });
+      await waitForLocalCoverServiceWorkerRegistration(
+        navigator.serviceWorker.register('/folia-cover-sw.js', { scope: '/' }),
+      );
       await waitForLocalCoverServiceWorkerReady(navigator.serviceWorker.ready);
     } catch (error) {
       console.error('[LocalCoverAsset] Failed to initialize the local cover service worker', error);

@@ -82,5 +82,10 @@ const bootFolium = async () => {
 
 void bootFolium()
     .finally(() => {
-        void initializeLocalCoverRuntime().finally(renderApp);
+        // Mount the app as soon as the mod/client bootstrap settles. The local-cover service
+        // worker is a background resource route, not a render prerequisite: waiting for its
+        // registration used to hold this callback forever when register() never settled, leaving
+        // the HTML splash animation on screen with no app behind it.
+        renderApp();
+        void initializeLocalCoverRuntime();
     });

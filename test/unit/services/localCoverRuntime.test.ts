@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { waitForLocalCoverServiceWorkerReady } from '../../../src/services/localCoverRuntime';
+import {
+  waitForLocalCoverServiceWorkerReady,
+  waitForLocalCoverServiceWorkerRegistration,
+} from '../../../src/services/localCoverRuntime';
 
 // test/unit/services/localCoverRuntime.test.ts
 // Verifies local-cover startup cannot wait indefinitely for service worker readiness.
@@ -25,6 +28,20 @@ describe('local cover runtime', () => {
     );
     const assertion = expect(waiting).rejects.toThrow(
       'Local cover service worker readiness timed out after 50ms.',
+    );
+
+    await vi.advanceTimersByTimeAsync(50);
+    await assertion;
+  });
+
+  it('rejects with a timeout error when registration never settles', async () => {
+    vi.useFakeTimers();
+    const waiting = waitForLocalCoverServiceWorkerRegistration(
+      new Promise<ServiceWorkerRegistration>(() => undefined),
+      50,
+    );
+    const assertion = expect(waiting).rejects.toThrow(
+      'Local cover service worker registration timed out after 50ms.',
     );
 
     await vi.advanceTimersByTimeAsync(50);
